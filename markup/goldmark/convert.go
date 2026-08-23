@@ -27,6 +27,8 @@ import (
 	"github.com/gohugoio/hugo/markup/goldmark/internal/render"
 	"github.com/gohugoio/hugo/markup/goldmark/passthrough"
 	"github.com/gohugoio/hugo/markup/goldmark/tables"
+	footnote "github.com/scottlaird/goldmark-footnote"
+	sidenote "github.com/scottlaird/goldmark-sidenote"
 	"github.com/yuin/goldmark/util"
 
 	"github.com/yuin/goldmark"
@@ -183,17 +185,33 @@ func newMarkdown(pcfg converter.ProviderConfig) goldmark.Markdown {
 	}
 
 	if cfg.Extensions.Footnote.Enable {
-		opts := []extension.FootnoteOption{}
-		opts = append(opts, extension.WithFootnoteBacklinkHTML(cfg.Extensions.Footnote.BacklinkHTML))
-		if cfg.Extensions.Footnote.EnableAutoIDPrefix {
-			opts = append(opts,
-				extension.WithFootnoteIDPrefixFunction(func(n ast.Node) []byte {
-					documentID := n.OwnerDocument().Meta()["documentID"].(string)
-					return []byte("h" + documentID)
-				}))
+		// goldmark's footnote extension with inline footnotes added; with
+		// Inline off it behaves as goldmark's own does.
+		idPrefix := func(n ast.Node) []byte {
+			documentID := n.OwnerDocument().Meta()["documentID"].(string)
+			return []byte("h" + documentID)
 		}
-		f := extension.NewFootnote(opts...)
-		extensions = append(extensions, f)
+
+		opts := []footnote.FootnoteOption{}
+		opts = append(opts, footnote.WithFootnoteBacklinkHTML(cfg.Extensions.Footnote.BacklinkHTML))
+		if cfg.Extensions.Footnote.EnableAutoIDPrefix {
+			opts = append(opts, footnote.WithFootnoteIDPrefixFunction(idPrefix))
+		}
+		if cfg.Extensions.Footnote.Inline {
+			opts = append(opts, footnote.WithInlineFootnotes())
+		}
+		extensions = append(extensions, footnote.NewFootnote(opts...))
+
+		if cfg.Extensions.Footnote.Sidenote.Enable {
+			sopts := []sidenote.Option{}
+			if cfg.Extensions.Footnote.Sidenote.KeepFootnotes {
+				sopts = append(sopts, sidenote.WithFootnotes())
+			}
+			if cfg.Extensions.Footnote.EnableAutoIDPrefix {
+				sopts = append(sopts, sidenote.WithIDPrefixFunction(idPrefix))
+			}
+			extensions = append(extensions, sidenote.New(sopts...))
+		}
 	}
 
 	if cfg.Extensions.CJK.Enable {

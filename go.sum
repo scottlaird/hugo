@@ -458,6 +458,10 @@ github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd h1:CmH9+J6ZSsIjUK
 github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd/go.mod h1:hPqNNc0+uJM6H+SuU8sEs5K5IQeKccPqeSjfgcKGgPk=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 h1:KRzFb2m7YtdldCEkzs6KqmJw4nqEVZGK7IN2kJkjTuQ=
 github.com/santhosh-tekuri/jsonschema/v6 v6.0.2/go.mod h1:JXeL+ps8p7/KNMjDQk3TCwPpBy0wYklyWTfbkIzdIFU=
+github.com/scottlaird/goldmark-footnote v0.0.0-20260823180531-2e217bd7f694 h1:8Ng6B0qm8qjdDGezJJWKINjzvxOdYUtdkgg75aKxFDA=
+github.com/scottlaird/goldmark-footnote v0.0.0-20260823180531-2e217bd7f694/go.mod h1:sKI8EbeJ+XwKw6mZXdHabHHQ12LI+vMzHwY7XlJKaUc=
+github.com/scottlaird/goldmark-sidenote v0.0.0-20260823174725-167f5cf124e0 h1:yZ/oipRcDaKhJU068kENUkjDWJK+T7Q7W49m2mWF3Qc=
+github.com/scottlaird/goldmark-sidenote v0.0.0-20260823174725-167f5cf124e0/go.mod h1:QFrIOcUTzpNzgIUPDKFQFp1cee+RYdO4qVmwbom+aXM=
 github.com/sebdah/goldie/v2 v2.8.0 h1:dZb9wR8q5++oplmEiJT+U/5KyotVD+HNGCAc5gNr8rc=
 github.com/sebdah/goldie/v2 v2.8.0/go.mod h1:oZ9fp0+se1eapSRjfYbsV/0Hqhbuu3bJVvKI/NNtssI=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=

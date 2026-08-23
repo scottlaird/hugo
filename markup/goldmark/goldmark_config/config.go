@@ -44,6 +44,11 @@ var Default = Config{
 			Enable:             true,
 			EnableAutoIDPrefix: false,
 			BacklinkHTML:       "&#x21a9;&#xfe0e;",
+			Inline:             false,
+			Sidenote: Sidenote{
+				Enable:        false,
+				KeepFootnotes: false,
+			},
 		},
 		DefinitionList:  true,
 		Table:           true,
@@ -175,6 +180,22 @@ type Footnote struct {
 	Enable             bool
 	EnableAutoIDPrefix bool
 	BacklinkHTML       string
+
+	// Whether to enable Pandoc style inline footnotes: ^[a note].
+	Inline bool
+
+	Sidenote Sidenote
+}
+
+// Sidenote holds sidenote configuration: notes set in the margin, in the
+// manner of Tufte CSS.
+type Sidenote struct {
+	// Whether to render notes as sidenotes.
+	Enable bool
+
+	// Whether to render notes as footnotes too, for a stylesheet to choose
+	// between. Their contents then appear twice in the output.
+	KeepFootnotes bool
 }
 
 // Typographer holds typographer configuration.

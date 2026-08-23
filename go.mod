@@ -61,6 +61,8 @@ require (
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/rogpeppe/go-internal v1.16.0
+	github.com/scottlaird/goldmark-footnote v0.0.0-20260823180531-2e217bd7f694
+	github.com/scottlaird/goldmark-sidenote v0.0.0-20260823174725-167f5cf124e0
 	github.com/spf13/afero v1.15.0
 	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
