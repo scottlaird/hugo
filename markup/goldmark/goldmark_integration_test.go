@@ -15,6 +15,7 @@ package goldmark_test
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1067,4 +1068,151 @@ title: "Home"
 	b.AssertFileContent("public/index.html",
 		`<a href="https://a.com/?a=1&amp;b=2">foo</a>`,
 	)
+}
+
+func TestInlineFootnotes(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+[markup.goldmark.extensions.footnote]
+inline = true
+-- content/p1.md --
+---
+title: "p1"
+---
+Video is hard.^[Most players can down-convert video that doesn't fit.]
+
+A reference note[^r] is numbered with it.
+
+[^r]: The reference note.
+-- layouts/page.html --
+{{ .Content }}
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/p1/index.html", `
+		<a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a>
+		<a href="#fn:2" class="footnote-ref" role="doc-noteref">2</a>
+		<li id="fn:1">
+		<p>Most players can down-convert video that doesn&rsquo;t fit.
+		<li id="fn:2">
+		<p>The reference note.
+	`)
+}
+
+// Inline footnotes are opt-in: ^[ is ordinary text in PHP Markdown Extra.
+func TestInlineFootnotesDisabledByDefault(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+-- content/p1.md --
+---
+title: "p1"
+---
+Not a footnote.^[still text]
+-- layouts/page.html --
+{{ .Content }}
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/p1/index.html", "<p>Not a footnote.^[still text]</p>")
+}
+
+func TestSidenotes(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+[markup.goldmark.extensions.footnote]
+inline = true
+[markup.goldmark.extensions.footnote.sidenote]
+enable = true
+-- content/p1.md --
+---
+title: "p1"
+---
+Video is hard.^[Most players can down-convert video that doesn't fit.]
+-- layouts/page.html --
+{{ .Content }}
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/p1/index.html", `
+		<span class="sidenote-wrapper"><label for="sn-0" class="margin-toggle sidenote-number"></label>
+		<input type="checkbox" id="sn-0" class="margin-toggle">
+		<span class="sidenote">Most players can down-convert video that doesn&rsquo;t fit.
+	`)
+	// Neither the footnote list nor the links to it are rendered.
+	b.AssertFileContent("public/p1/index.html", `
+		! <div class="footnotes"
+		! class="footnote-ref"
+	`)
+}
+
+func TestSidenotesKeepFootnotes(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+[markup.goldmark.extensions.footnote]
+inline = true
+[markup.goldmark.extensions.footnote.sidenote]
+enable = true
+keepFootnotes = true
+-- content/p1.md --
+---
+title: "p1"
+---
+Video is hard.^[A note.]
+-- layouts/page.html --
+{{ .Content }}
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/p1/index.html", `
+		<a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a>
+		<span class="sidenote-wrapper">
+		<div class="footnotes" role="doc-endnotes">
+		<li id="fn:1">
+	`)
+}
+
+// The prefix that keeps ids unique across documents on one page has to reach
+// sidenotes as well as footnotes.
+func TestSidenotesAutoIDPrefix(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+[markup.goldmark.extensions.footnote]
+inline = true
+enableAutoIDPrefix = true
+[markup.goldmark.extensions.footnote.sidenote]
+enable = true
+keepFootnotes = true
+-- content/p1.md --
+---
+title: "p1"
+---
+Video is hard.^[A note.]
+-- layouts/page.html --
+{{ .Content }}
+`
+
+	b := hugolib.Test(t, files)
+
+	content := b.FileContent("public/p1/index.html")
+
+	// The prefix comes from the document, so match it rather than spell it out.
+	m := regexp.MustCompile(`id="(h[0-9a-f]+)fn:1"`).FindStringSubmatch(content)
+	b.Assert(m, qt.Not(qt.IsNil))
+	prefix := m[1]
+	b.Assert(content, qt.Contains, `<label for="`+prefix+`sn-0"`)
+	b.Assert(content, qt.Contains, `<input type="checkbox" id="`+prefix+`sn-0"`)
 }

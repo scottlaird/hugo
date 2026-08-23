@@ -104,7 +104,42 @@ Enabled by default, the Footnote extension enables inclusion of footnotes in Mar
 
 `enableAutoIDPrefix`
 : {{< new-in 0.151.0 />}}
-: (`bool`) Whether to prepend a unique prefix to footnote IDs, preventing clashes when multiple documents are rendered together. This prefix is unique to each logical path, which means that the prefix is not unique across content dimensions such as language. Default is `false`.
+: (`bool`) Whether to prepend a unique prefix to footnote IDs, preventing clashes when multiple documents are rendered together. This prefix is unique to each logical path, which means that the prefix is not unique across content dimensions such as language. Default is `false`. Applies to sidenote IDs as well.
+
+`inline`
+: (`bool`) Whether to enable [Pandoc: Inline footnotes][], where the text of a note is written where it is referenced instead of in a separate definition. Default is `false`.
+
+```text
+Here is an inline note.^[Inline notes are easier to write, since you don't
+have to pick an identifier and move down to type the note.]
+```
+
+Inline and reference footnotes share one numbering, in the order they are referenced. The contents of an inline footnote are parsed as inline text, so a note cannot contain block elements such as lists.
+
+##### Sidenote
+
+A sidenote is a note set beside the text that refers to it, in the margin, in the manner of [Tufte CSS: Sidenotes][]. The markup matches [pandoc-sidenote][], so a stylesheet written for that will work unchanged. The number in front of a sidenote is drawn by the stylesheet from a CSS counter.
+
+`enable`
+: (`bool`) Whether to render notes as sidenotes. Neither the footnote list nor the links to it are rendered. Default is `false`.
+
+`keepFootnotes`
+: (`bool`) Whether to render notes as footnotes as well as sidenotes, leaving it to a stylesheet to decide which of the two is visible. A sidenote needs a margin wide enough to hold it, so a stylesheet will typically show sidenotes on large displays and fall back to footnotes on small ones. The contents of every note appear twice in the output. Default is `false`.
+
+{{< code-toggle file=hugo >}}
+[markup.goldmark.extensions.footnote]
+inline = true
+[markup.goldmark.extensions.footnote.sidenote]
+enable = true
+keepFootnotes = true
+{{< /code-toggle >}}
+
+```css
+@media (max-width: 760px) { .sidenote-wrapper { display: none } }
+@media (min-width: 761px) { .footnotes, .footnote-ref { display: none } }
+```
+
+A note referenced more than once produces one sidenote per reference, each with its own ID. Footnote numbering counts notes and sidenote numbering counts sidenotes, so with `keepFootnotes` such a note is numbered differently in the two renderings.
 
 #### Passthrough
 
@@ -343,6 +378,9 @@ This is the default configuration for the table of contents, applicable to Goldm
 [Markdown attributes]: /content-management/markdown-attributes/
 [PHP Markdown Extra: Definition lists]: https://michelf.ca/projects/php-markdown/extra/#def-list
 [PHP Markdown Extra: Footnotes]: https://michelf.ca/projects/php-markdown/extra/#footnotes
+[Pandoc: Inline footnotes]: https://pandoc.org/MANUAL.html#footnotes
+[Tufte CSS: Sidenotes]: https://edwardtufte.github.io/tufte-css/#sidenotes
+[pandoc-sidenote]: https://github.com/jez/pandoc-sidenote
 [Pandoc]: https://pandoc.org/
 [`Fragments.Identifiers`]: /methods/page/fragments/#identifiers
 [`TableOfContents`]: /methods/page/tableofcontents/
