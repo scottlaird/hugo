@@ -135,9 +135,17 @@ keepFootnotes = true
 {{< /code-toggle >}}
 
 ```css
-@media (max-width: 760px) { .sidenote-wrapper { display: none } }
-@media (min-width: 761px) { .footnotes, .footnote-ref { display: none } }
+@media (max-width: 760px) {
+  .sidenote-wrapper { display: none }
+}
+@media (min-width: 761px) {
+  .footnotes,
+  .footnote-ref,
+  sup:has(> a.footnote-ref) { display: none }
+}
 ```
+
+The `footnote-ref` class is on the `a`, not on the `sup` around it, so hiding it alone leaves an empty `sup` behind that still takes part in layout; the third selector removes the whole element.
 
 A note referenced more than once produces one sidenote per reference, each with its own ID. Footnote numbering counts notes and sidenote numbering counts sidenotes, so with `keepFootnotes` such a note is numbered differently in the two renderings.
 
