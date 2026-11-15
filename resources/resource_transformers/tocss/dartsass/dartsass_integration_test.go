@@ -647,6 +647,14 @@ target = "assets/sass"
 @use "bar1"; // directory with _index file from module mount
 @use "foo2"; // directory with index file from OS file system
 @use "bar2"; // directory with index file from module mount
+@use "_foo3"; // underscore-prefixed directory with _index file
+@use "baz";
+-- assets/sass/_foo3/_index.scss --
+.foo3 {color: green;}
+-- assets/sass/_baz.scss --
+@use "_qux"; // underscore-prefixed directory, relative to an imported file
+-- assets/sass/_qux/_index.scss --
+.qux {color: green;}
 -- assets/sass/foo1/_index.scss --
 .foo1 {color: red;}
 -- miscellaneous/sass/bar1/_index.scss --
@@ -659,7 +667,7 @@ target = "assets/sass"
 
 	b := hugolib.Test(t, files, hugolib.TestOptOsFs())
 
-	b.AssertFileContent("public/index.html", ".foo1{color:red}.bar1{color:blue}.foo2{color:red}.bar2{color:blue}")
+	b.AssertFileContent("public/index.html", ".foo1{color:red}.bar1{color:blue}.foo2{color:red}.bar2{color:blue}.foo3{color:green}.qux{color:green}")
 }
 
 func TestIgnoreDeprecationWarnings(t *testing.T) {
