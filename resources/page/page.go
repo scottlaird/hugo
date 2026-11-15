@@ -218,13 +218,11 @@ type PageMetaProvider interface {
 	// The configured layout to use to render this page. Typically set in front matter.
 	Layout() string
 
+	// RawSummary returns the summary as set in front matter, without any processing.
+	RawSummary() string
+
 	// The title used for links.
 	LinkTitle() string
-
-	// IsNode returns whether this is a branch node (e.g. a section).
-	//
-	// Deprecated: Use IsBranch or "not IsPage" instead.
-	IsNode() bool
 
 	// IsBranch returns whether this is a branch node, i.e. a node that
 	// can have descendants (home, section, taxonomy or term).
@@ -257,6 +255,15 @@ type PageMetaProvider interface {
 	// The configured weight, used as the first sort value in the default
 	// page sort if non-zero.
 	Weight() int
+
+	DeprecatedPageMetaProvider
+}
+
+type DeprecatedPageMetaProvider interface {
+	// IsNode returns whether this is a branch node (e.g. a section).
+	//
+	// Deprecated: Use IsBranch or "not IsPage" instead.
+	IsNode() bool
 }
 
 // NamedPageMetaValue returns a named metadata value from a PageMetaResource.
@@ -323,12 +330,15 @@ func NamedPageMetaValue(p PageMetaLanguageResource, nameLower string) (any, bool
 type PageMetaInternalProvider interface {
 	// This is for internal use only.
 	PathInfo() *paths.Path
+
+	RootParamProvider
 }
 
 // PageRenderProvider provides a way for a Page to render content.
 type PageRenderProvider interface {
-	// Render renders the given layout with this Page as context.
-	Render(ctx context.Context, layout ...string) (template.HTML, error)
+	// Render renders the given view (a layout template) with this Page as
+	// the data context, or, if given, the second argument CONTEXT.
+	Render(ctx context.Context, args ...any) (template.HTML, error)
 	// RenderString renders the first value in args with the content renderer defined
 	// for this Page.
 	// It takes an optional map as a second argument:
@@ -448,7 +458,7 @@ type RefProvider interface {
 type RelatedKeywordsProvider interface {
 	// Make it indexable as a related.Document
 	// RelatedKeywords is meant for internal usage only.
-	RelatedKeywords(cfg related.IndexConfig) ([]related.Keyword, error)
+	RelatedKeywords(cfg related.IndexConfig) ([]string, error)
 }
 
 // ShortcodeInfoProvider provides info about the shortcodes in a Page.

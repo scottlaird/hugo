@@ -4,7 +4,6 @@ package main
 
 import (
 	"bytes"
-	"cmp"
 	"fmt"
 	"os"
 	"path"
@@ -146,8 +145,8 @@ func Docker() error {
 
 // Run tests and linters
 func Check() {
-	if isCI() && isDarwin() {
-		// Skip on macOS in CI (disk space issues)
+	if isCI() && (isDarwin() || isWindows()) {
+		// Skip on macOS/Windows in CI (disk space issues)
 	} else {
 		mg.Deps(Fmt, Vet)
 	}
@@ -159,7 +158,7 @@ func Check() {
 
 func testGoFlags() string {
 	if isCI() {
-		return ""
+		return "-vet=off"
 	}
 
 	return "-timeout=2m"
@@ -171,7 +170,6 @@ func CleanTest() error {
 }
 
 // Run tests in 32-bit mode
-// Note that we don't run with the extended tag. Currently not supported in 32 bit.
 func Test386() error {
 	env := map[string]string{"GOARCH": "386", "GOFLAGS": testGoFlags()}
 	return runCmd(env, goexe, "test", "-p", "2", "./...")
@@ -180,51 +178,25 @@ func Test386() error {
 // Run tests
 func Test() error {
 	env := map[string]string{"GOFLAGS": testGoFlags()}
-	if isCI() {
-		// We have space issues on GitHub Actions (lots tests, incresing usage of Go generics).
-		// Test each package separately and clean up in between.
-		pkgs, err := hugoPackages()
-		if err != nil {
-			return err
-		}
-		for _, pkg := range pkgs {
-			if err := cmp.Or(CleanTest(), UninstallAll()); err != nil {
-				return err
-			}
-			if err := runCmd(env, goexe, "test", "-p", "2", pkg, "-tags", buildTags()); err != nil {
-				return err
-			}
-		}
-		return nil
-	} else {
-		return runCmd(env, goexe, "test", "./...", "-tags", buildTags())
-	}
+	return runCmd(env, goexe, "test", testParallelFlag(), "./...", "-tags", buildTags())
 }
 
 // Run tests with race detector
 func TestRace() error {
 	env := map[string]string{"GOFLAGS": testGoFlags()}
-	if isCI() {
-		// We have space issues on GitHub Actions (lots tests, incresing usage of Go generics).
-		// Test each package separately and clean up in between.
-		pkgs, err := hugoPackages()
-		if err != nil {
-			return err
-		}
-		for _, pkg := range pkgs {
-			if err := cmp.Or(CleanTest(), UninstallAll()); err != nil {
-				return err
-			}
-			if err := runCmd(env, goexe, "test", "-p", "2", "-race", pkg, "-tags", buildTags()); err != nil {
-				return err
-			}
-		}
-		return nil
-	} else {
+	if !isCI() {
 		// These are flaky when run locally for some reason, is stable on CI.
 		env["HUGOTESTING_SKIP_COMMANDS"] = "1"
-		return runCmd(env, goexe, "test", "-race", "./...", "-tags", buildTags())
 	}
+	return runCmd(env, goexe, "test", testParallelFlag(), "-race", "./...", "-tags", buildTags())
+}
+
+// testParallelFlag limits the number of packages built and tested in parallel on CI to save memory.
+func testParallelFlag() string {
+	if isCI() {
+		return "-p=2"
+	}
+	return fmt.Sprintf("-p=%d", runtime.NumCPU())
 }
 
 // Run gofmt linter
@@ -328,6 +300,10 @@ func isDarwin() bool {
 	return runtime.GOOS == "darwin"
 }
 
+func isWindows() bool {
+	return runtime.GOOS == "windows"
+}
+
 func isCI() bool {
 	return os.Getenv("CI") != ""
 }
@@ -340,8 +316,6 @@ func buildFlags() []string {
 }
 
 func buildTags() string {
-	// To build the extended Hugo SCSS/SASS enabled version, build with
-	// HUGO_BUILD_TAGS=extended mage install etc.
 	// To build with `hugo deploy`, use HUGO_BUILD_TAGS=withdeploy
 	if envtags := os.Getenv("HUGO_BUILD_TAGS"); envtags != "" {
 		return envtags

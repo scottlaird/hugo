@@ -1,6 +1,6 @@
 ---
 title: safe.URL
-description: Declares the given string as a safe URL or URL substring.
+description: Returns the given string declared as a safe URL or URL substring.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [safeURL]
     returnType: template.URL
     signatures: [safe.URL INPUT]
-aliases: [/functions/safeurl]
 ---
 
 ## Introduction

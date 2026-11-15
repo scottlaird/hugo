@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"iter"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -37,6 +38,7 @@ import (
 	"github.com/gohugoio/hugo/markup/tableofcontents"
 
 	"github.com/gohugoio/hugo/common/herrors"
+	"github.com/gohugoio/hugo/common/hreflect"
 	"github.com/gohugoio/hugo/common/types"
 
 	"github.com/gohugoio/hugo/source"
@@ -170,18 +172,23 @@ func (ps *pageState) GetDependencyManagerForScopesAll() []identity.Manager {
 //
 // This method is also implemented on SiteInfo.
 func (ps *pageState) Param(key any) (any, error) {
+	if keyStr, ok := key.(string); ok {
+		if method, ok := page.ReservedParamMethod(ps, keyStr); ok {
+			keyStr = strings.ToLower(keyStr)
+			if _, loaded := ps.s.h.pageParamDeprecations.LoadOrStore(keyStr, true); !loaded {
+				page.DeprecateReservedParam(ps.s.Log.Logger(), fmt.Sprintf(".Param %q", keyStr), keyStr, "."+method)
+			}
+			return hreflect.CallMethodByName(context.Background(), method, reflect.ValueOf(ps))[0].Interface(), nil
+		}
+	}
 	return resource.Param(ps, ps.s.Params(), key)
 }
 
 // RelatedKeywords implements the related.Document interface needed for fast page searches.
-func (ps *pageState) RelatedKeywords(cfg related.IndexConfig) ([]related.Keyword, error) {
+func (ps *pageState) RelatedKeywords(cfg related.IndexConfig) ([]string, error) {
 	v, found, err := page.NamedPageMetaValue(ps, cfg.Name)
-	if err != nil {
+	if err != nil || !found {
 		return nil, err
-	}
-
-	if !found {
-		return nil, nil
 	}
 
 	return cfg.ToKeywords(v)

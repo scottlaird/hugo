@@ -8,12 +8,9 @@ params:
     aliases: [urlize]
     returnType: string
     signatures: [urls.URLize INPUT]
-aliases: [/functions/urlize]
 ---
 
 {{% include "/_common/functions/urls/anchorize-vs-urlize.md" %}}
-
-## Example
 
 Use the `urlize` function to create a link to a [term page](g).
 

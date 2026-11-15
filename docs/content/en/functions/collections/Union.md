@@ -8,10 +8,11 @@ params:
     aliases: [union]
     returnType: '[]any'
     signatures: [collections.Union SLICE1 SLICE2]
-aliases: [/functions/union]
 ---
 
+## Basic usage
 
+Use the `union` function to combine two slices, removing duplicate elements:
 
 ```go-html-template
 {{ union (slice 1 2 3) (slice 3 4 5) }} → [1 2 3 4 5]

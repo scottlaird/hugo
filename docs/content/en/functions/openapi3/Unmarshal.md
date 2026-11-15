@@ -1,6 +1,6 @@
 ---
 title: openapi3.Unmarshal
-description: Unmarshals the given resource into an OpenAPI 3 Description.
+description: Returns an OpenAPI 3 Description unmarshaled from the given resource.
 categories: []
 keywords: []
 params:
@@ -10,11 +10,11 @@ params:
     signatures: ['openapi3.Unmarshal RESOURCE [OPTIONS]']
 ---
 
+## Usage
+
 The resource passed to the `openapi3.Unmarshal` function must be an [OpenAPI Document][], typically in JSON or YAML format. This resource can be a [global resource](g) or a [remote resource](g).
 
 This function automatically resolves and includes all external references, both local and remote, and returns a complete [OpenAPI Description][] that fully describes the surface of an API and its semantics.
-
-## Options
 
 The `openapi3.Unmarshal` function accepts an options map.
 
@@ -23,6 +23,8 @@ The `openapi3.Unmarshal` function accepts an options map.
 : (`map`) This is a map of the options for the [`resources.GetRemote`][] function, useful when an OpenAPI Document includes remote external references.
 
 ## Examples
+
+The following examples demonstrate how to unmarshal remote and global resources, and how to inspect the result.
 
 ### Remote resource
 
@@ -45,7 +47,7 @@ To work with a remote resource:
 {{ end }}
 ```
 
-In the example above, the same HTTP Authorization header is used for both the initial remote request made by the `resources.GetRemote` function and for subsequent requests by the `openapi.Unmarshal` function as it retrieve remote external references.
+In the example above, the same HTTP Authorization header is used for both the initial remote request made by the `resources.GetRemote` function and for subsequent requests by the `openapi.Unmarshal` function as it retrieves remote external references.
 
 ### Global resource
 
@@ -64,7 +66,7 @@ To work with a global resource:
 
 For global resources, local external reference paths starting with `/` are resolved relative to the `assets` directory. All other local paths are resolved relative to the entry point. In the example above, local paths are resolved relative to `assets/api/petstore.json`.
 
-## Inspection
+### Inspection
 
 > [!NOTE]
 > The unmarshaled data structure is created with [`kin-openapi`][]. Many fields are structs or pointers (not maps), and therefore require accessors or other methods for indexing and iteration.

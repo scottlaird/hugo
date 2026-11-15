@@ -1,6 +1,6 @@
 ---
 title: PageRef
-description: Returns the `pageRef` property of the given menu entry.
+description: Returns the pageRef property of the given menu entry.
 categories: []
 keywords: []
 params:
@@ -26,7 +26,7 @@ If a matching page is found:
 If a matching page is not found:
 
 - The [`URL`][] method returns the entry's `url` property if set, else an empty string
-- The [`Page`][] method returns nil
+- The [`Page`][] method returns `nil`
 - The [`HasMenuCurrent`][] and [`IsMenuCurrent`][] methods on a `Page` object return `false`
 
 > [!NOTE]

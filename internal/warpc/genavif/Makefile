@@ -1,15 +1,11 @@
 # The library versions to use.
-LIBAVIF_VERSION = v1.4.1
-AOM_VERSION = v3.14.1
-DAV1D_VERSION = 1.5.3
+LIBAVIF_VERSION = v1.4.2
+AOM_VERSION = v3.15.2
+DAV1D_VERSION = 1.5.4
 # Commit used by Chromium, see https://source.chromium.org/chromium/chromium/src/+/main:DEPS?q=libyuv
 LIBYUV_COMMIT = 9d98aaefe7a5e2710aa6175d44da38892400b381
 
-# The path to the WebAssembly SDK. Can be overridden from the command line.
-# e.g., make WASI_SDK_PATH=/path/to/wasi-sdk
-# Download releases from https://github.com/WebAssembly/wasi-sdk/releases.
-# Note that on MacOS, you may need to add some whitelistings in Privacy & Security > Security.
-WASI_SDK_PATH ?= /opt/wasi-sdk
+include ../wasisdk.mk
 
 LIBAVIF_BUILD := $(PWD)/build
 LIBAVIF_SRC := $(PWD)/libavif
@@ -43,6 +39,13 @@ LD_LIBS := $(LIBAVIF_BUILD)/libavif.a $(LIBAVIF_DAV1D_BUILD)/src/libdav1d.a $(LI
 LIB_SIMD_FLAGS := -msimd128 -mnontrapping-fptoint
 LIB_CFLAGS := $(LIB_SIMD_FLAGS) -mllvm -wasm-enable-sjlj -mllvm -wasm-use-legacy-eh=false
 
+# The wasm-ld default stack is 64 KiB, which is too small for libaom: at
+# encoderSpeed 6 and lower, the CDEF search (av1_cdef_mse_calc_block) alone
+# needs ~40 KiB of stack, and the encode overflowed the stack and trapped with
+# an out of bounds memory access. Peak usage measured at encoderSpeed 1 is
+# between 96 and 128 KiB, so 1 MiB gives plenty of headroom. See issue 15522.
+WASM_STACK_SIZE := 1048576
+
 # Compiler flags for the WASM build
 WASM_CFLAGS := \
     -O3 \
@@ -53,14 +56,17 @@ WASM_CFLAGS := \
     -mllvm -wasm-use-legacy-eh=false \
     -Wl,--export=malloc \
     -Wl,--export=free \
+    -Wl,-z,stack-size=$(WASM_STACK_SIZE) \
+    $(WASM_LDFLAGS_COMMON) \
     -Wall \
 
-all: $(LIBAVIF_SRC) $(LIBAVIF_AOM_SRC) $(LIBAVIF_DAV1D_SRC) $(LIBYUV_SRC) $(LIBAVIF_BUILD)
+all: check-wasi-sdk $(LIBAVIF_SRC) $(LIBAVIF_AOM_SRC) $(LIBAVIF_DAV1D_SRC) $(LIBYUV_SRC) $(LIBAVIF_BUILD)
 	@echo ">>> Configuring and building C libraries in $(LIBAVIF_BUILD)"
 	cd $(LIBAVIF_AOM_BUILD); \
 	cmake $(LIBAVIF_AOM_SRC) \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DBUILD_SHARED_LIBS=0 \
+		-DENABLE_APPS=0 \
 		-DENABLE_DOCS=0 \
 		-DENABLE_EXAMPLES=0 \
 		-DENABLE_TESTDATA=0 \
@@ -81,14 +87,17 @@ all: $(LIBAVIF_SRC) $(LIBAVIF_AOM_SRC) $(LIBAVIF_DAV1D_SRC) $(LIBYUV_SRC) $(LIBA
 	cp $(LIBAVIF_AOM_BUILD)/libaom.a $(LIBAVIF_BUILD)/libaom.a
 
 	@echo ">>> Building dav1d with meson"
+	printf "[constants]\nwasi_sdk = '%s'\n" "$(WASI_SDK_PATH)" > $(LIBAVIF_BUILD)/wasi-sdk-path.txt
+	# Meson keeps the cross files from the first setup, so start from scratch.
+	rm -rf $(LIBAVIF_DAV1D_BUILD)
 	cd $(LIBAVIF_DAV1D_SRC); \
 	meson setup build \
+		--cross-file $(LIBAVIF_BUILD)/wasi-sdk-path.txt \
 		--cross-file $(PWD)/wasi-sdk-cross.txt \
 		-Denable_asm=false \
 		-Denable_tools=false \
 		-Denable_tests=false \
-		-Ddefault_library=static \
-		--reconfigure
+		-Ddefault_library=static
 	cd $(LIBAVIF_DAV1D_SRC); \
 	ninja -C build -v
 

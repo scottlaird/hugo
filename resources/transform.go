@@ -393,6 +393,10 @@ func (r resourceAdapter) TransformWithContext(ctx context.Context, t ...Resource
 	return &r, nil
 }
 
+func (r *resourceAdapter) FrameCount() int {
+	return r.getImageOps().FrameCount()
+}
+
 func (r *resourceAdapter) Width() int {
 	return r.getImageOps().Width()
 }
@@ -625,8 +629,6 @@ func (r *resourceAdapter) transform(key string, publish, setContent bool) (*reso
 					errMsg = ". You need to install PostCSS. See https://gohugo.io/functions/css/postcss/"
 				case "tailwindcss":
 					errMsg = ". You need to install TailwindCSS CLI. See https://gohugo.io/functions/css/tailwindcss/"
-				case "tocss":
-					errMsg = ". Check your Hugo installation; you need the extended version to build SCSS/SASS with transpiler set to 'libsass'."
 				case "tocss-dart":
 					errMsg = ". You need to install Dart Sass, see https://gohugo.io//functions/css/sass/#dart-sass"
 				case "babel":
@@ -872,6 +874,9 @@ func contentReadSeekerCloser(r resource.Resource) (hugio.ReadSeekCloser, error) 
 		rc, err := rr.ReadSeekCloser()
 		if err != nil {
 			return nil, err
+		}
+		if _, ok := rc.(afero.File); ok {
+			return hugio.NewSkipBOMReader(rc)
 		}
 		return rc, nil
 	default:

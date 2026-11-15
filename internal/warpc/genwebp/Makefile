@@ -2,12 +2,8 @@
 # Note that when updating this, you may also need to update the badge in README.md.
 LIBWEBP_VERSION = v1.6.0
 
-# The path to the WebAssembly SDK. Can be overridden from the command line.
-# e.g., make WASI_SDK_PATH=/path/to/wasi-sdk
-# Download releases from https://github.com/WebAssembly/wasi-sdk/releases.
-# Note that on MacOS, you may need to add some whitelistings in Privacy & Security > Security.
 # Note that you also need wasm-validate from WebAssembly Binary Toolkit (WABT) installed.
-WASI_SDK_PATH ?= /opt/wasi-sdk
+include ../wasisdk.mk
 
 BUILD_DIR := build
 BUILD_WASM := ${BUILD_DIR}/webp.wasm
@@ -27,6 +23,13 @@ C_INCLUDES := -I$(LIBWEBP_SRC)/src -I$(BUILD_DIR)/src -I.
 # Libraries to link against
 LD_LIBS := $(BUILD_DIR)/libwebpdemux.a $(BUILD_DIR)/libwebp.a $(BUILD_DIR)/libsharpyuv.a $(BUILD_DIR)/libwebpmux.a
 
+# Peak stack usage measured with libwebp v1.6.0 is between 20 and 24 KiB (in
+# VP8LGetBackwardReferences, when encoding the alpha channel losslessly),
+# independent of image size and encoding method, which fits in the wasm-ld
+# default of 64 KiB. Set it explicitly with plenty of headroom so a future
+# libwebp upgrade doesn't silently overflow it. See issue 15522.
+WASM_STACK_SIZE := 262144
+
 # Compiler flags for the WASM build
 WASM_CFLAGS := \
     -O3 \
@@ -35,12 +38,14 @@ WASM_CFLAGS := \
     -mnontrapping-fptoint \
     -Wl,--export=malloc \
     -Wl,--export=free \
+    -Wl,-z,stack-size=$(WASM_STACK_SIZE) \
+    $(WASM_LDFLAGS_COMMON) \
     -Wall
 
 .PHONY: all clean
 
 # Default target: build the WebAssembly binary
-all: $(LIBWEBP_SRC) $(BUILD_DIR)
+all: check-wasi-sdk $(LIBWEBP_SRC) $(BUILD_DIR)
 	@echo ">>> Configuring and building C libraries in $(BUILD_DIR)"
 	cd $(BUILD_DIR) && \
 	cmake $(realpath $(LIBWEBP_SRC)) \

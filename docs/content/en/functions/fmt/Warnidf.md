@@ -1,6 +1,6 @@
 ---
 title: fmt.Warnidf
-description: Log a suppressible WARNING from a template.
+description: Logs a suppressible WARNING from a template.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [warnidf]
     returnType: string
     signatures: ['fmt.Warnidf ID FORMAT [INPUT]']
-aliases: [/functions/warnidf]
 ---
 
 {{% include "/_common/functions/fmt/format-string.md" %}}

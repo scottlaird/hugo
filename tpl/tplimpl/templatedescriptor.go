@@ -87,12 +87,19 @@ func (s descriptorHandler) compareDescriptors(category Category, this, other Tem
 				return w
 			}
 
-			w.w1 = 1
+			if this.isLayoutCompatible(other) {
+				w.w1 = 1
+			}
 		}
 
 		if category == CategoryShortcode {
-			if (this.IsPlainText == other.IsPlainText || !other.IsPlainText) || this.AlwaysAllowPlainText {
+			plainTextOK := this.IsPlainText == other.IsPlainText || !other.IsPlainText || this.AlwaysAllowPlainText
+			if plainTextOK && this.isLayoutCompatible(other) {
 				w.w1 = 1
+				if other.OutputFormat == s.opts.DefaultOutputFormat {
+					// Prefer the default output format when falling back. See issue #15540.
+					w.wfallback = 1
+				}
 			}
 		}
 	}
@@ -245,6 +252,15 @@ func (this TemplateDescriptor) doCompare(category Category, other TemplateDescri
 	}
 
 	return w
+}
+
+//lint:ignore ST1006 this vs other makes it easier to reason about.
+func (this TemplateDescriptor) isLayoutCompatible(other TemplateDescriptor) bool {
+	switch other.LayoutFromTemplate {
+	case "", layoutAll, this.LayoutFromTemplate, this.LayoutFromUser:
+		return true
+	}
+	return false
 }
 
 func (d TemplateDescriptor) IsZero() bool {

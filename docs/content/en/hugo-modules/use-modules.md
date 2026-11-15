@@ -4,7 +4,6 @@ description: Use modules to manage the content, layout, presentation, and behavi
 categories: []
 keywords: []
 weight: 20
-aliases: [/themes/usage/,/themes/installing/,/installing-and-using-themes/]
 ---
 
 > [!NOTE]
@@ -151,7 +150,7 @@ Workspaces simplify local development of sites with modules. Create a `.work` fi
 A `.work` file example:
 
 ```text
-go 1.26
+go 1.27
 
 use .
 use ../my-hugo-module

@@ -1,6 +1,6 @@
 ---
 title: encoding.Jsonify
-description: Encodes the given object to JSON.
+description: Returns the given object encoded to JSON.
 categories: []
 keywords: []
 params:
@@ -8,8 +8,9 @@ params:
     aliases: [jsonify]
     returnType: template.HTML
     signatures: ['encoding.Jsonify [OPTIONS] INPUT']
-aliases: [/functions/jsonify]
 ---
+
+## Usage
 
 To customize the printing of the JSON, pass an options map as the first
 argument. Supported options are "prefix" and "indent". Each JSON element in

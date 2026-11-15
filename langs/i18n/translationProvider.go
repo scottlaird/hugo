@@ -29,7 +29,6 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/gohugoio/go-i18n/v2/i18n"
-	"github.com/gohugoio/hugo/helpers"
 	toml "github.com/pelletier/go-toml/v2"
 
 	"github.com/gohugoio/hugo/deps"
@@ -74,16 +73,17 @@ func (tp *TranslationProvider) NewResource(dst *deps.Deps) error {
 				files = append(files, info)
 				return nil
 			},
-		})
+		},
+	)
 
 	if err := w.Walk(); err != nil {
 		return err
 	}
 
-	// Sort translation files so that base tags (e.g. "de") are always registered
-	// before their subtag variants (e.g. "de-DE"); without this ordering the
-	// fallback chain breaks. See https://github.com/gohugoio/hugo/issues/7982.
-	sort.Slice(files, func(i, j int) bool {
+	// Register base tags (e.g. "de") before their subtag variants (e.g. "de-DE"),
+	// or the fallback chain breaks. The sort must be stable to keep the
+	// project/module precedence from the walk. See issues #7982 and #15518.
+	sort.SliceStable(files, func(i, j int) bool {
 		si := files[i].Meta().PathInfo.NameNoExt()
 		sj := files[j].Meta().PathInfo.NameNoExt()
 		return strings.Count(si, "-") < strings.Count(sj, "-")
@@ -97,7 +97,10 @@ func (tp *TranslationProvider) NewResource(dst *deps.Deps) error {
 
 	tp.t = NewTranslator(bundle, dst.Conf, dst.Log)
 
-	dst.Translate = tp.getTranslateFunc(dst)
+	defaultLang := defaultLanguage(dst.Conf)
+	for _, l := range dst.Conf.Languages().(langs.Languages) {
+		langs.SetTranslateFunc(l, tp.getTranslateFunc(l, defaultLang))
+	}
 
 	return nil
 }
@@ -105,13 +108,10 @@ func (tp *TranslationProvider) NewResource(dst *deps.Deps) error {
 const artificialLangTagPrefix = "art-x-"
 
 func addTranslationFile(bundle *i18n.Bundle, r *source.File) error {
-	f, err := r.FileInfo().Meta().Open()
+	b, err := r.FileInfo().Meta().ReadAll()
 	if err != nil {
-		return fmt.Errorf("failed to open translations file %q:: %w", r.LogicalName(), err)
+		return fmt.Errorf("failed to read translations file %q:: %w", r.LogicalName(), err)
 	}
-
-	b := helpers.ReaderToBytes(f)
-	f.Close()
 
 	name := r.LogicalName()
 	lang := paths.Filename(name)
@@ -145,9 +145,8 @@ func addTranslationFile(bundle *i18n.Bundle, r *source.File) error {
 	return nil
 }
 
-// CloneResource sets the language func for the new language.
+// CloneResource is a no-op, the translate funcs are shared between sites.
 func (tp *TranslationProvider) CloneResource(dst, src *deps.Deps) error {
-	dst.Translate = tp.getTranslateFunc(dst)
 	return nil
 }
 
@@ -161,11 +160,9 @@ func defaultLanguage(conf config.AllProvider) *langs.Language {
 	return conf.Language().(*langs.Language)
 }
 
-// getTranslateFunc returns the translation function for the language in Deps.
+// getTranslateFunc returns the translation function for the given language.
 // The lookup order is: current locale, current key, default locale, default key.
-func (tp *TranslationProvider) getTranslateFunc(dst *deps.Deps) func(ctx context.Context, translationID string, templateData any) string {
-	current := dst.Conf.Language().(*langs.Language)
-	defaultLang := defaultLanguage(dst.Conf)
+func (tp *TranslationProvider) getTranslateFunc(current, defaultLang *langs.Language) langs.TranslateFunc {
 	for _, l := range []*langs.Language{current, defaultLang} {
 		for _, key := range []string{strings.ToLower(l.Locale()), l.Lang} {
 			if fn, ok := tp.t.Lookup(key); ok {

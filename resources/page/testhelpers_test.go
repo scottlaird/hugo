@@ -172,6 +172,14 @@ func (p *testPage) Description() string {
 	return ""
 }
 
+func (p *testPage) RawSummary() string {
+	return ""
+}
+
+func (p *testPage) IsRootParam(key string) bool {
+	return false
+}
+
 func (p *testPage) ContentWithoutSummary(ctx context.Context) (template.HTML, error) {
 	return "", nil
 }
@@ -483,7 +491,7 @@ func (p *testPage) RelRefFrom(argsm map[string]any, source any) (string, error) 
 	return "", nil
 }
 
-func (p *testPage) Render(ctx context.Context, layout ...string) (template.HTML, error) {
+func (p *testPage) Render(ctx context.Context, args ...any) (template.HTML, error) {
 	panic("testpage: not implemented")
 }
 
@@ -507,7 +515,7 @@ func (p *testPage) Store() *hstore.Scratch {
 	panic("testpage: not implemented")
 }
 
-func (p *testPage) RelatedKeywords(cfg related.IndexConfig) ([]related.Keyword, error) {
+func (p *testPage) RelatedKeywords(cfg related.IndexConfig) ([]string, error) {
 	v, err := p.Param(cfg.Name)
 	if err != nil {
 		return nil, err

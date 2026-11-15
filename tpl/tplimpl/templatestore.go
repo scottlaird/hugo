@@ -124,7 +124,7 @@ func NewStore(opts StoreOptions, siteOpts SiteOptions) (*TemplateStore, error) {
 		optsOrig:             opts,
 		siteOptsOrig:         siteOpts,
 		htmlFormat:           html,
-		storeSite:            configureSiteStorage(siteOpts, opts.Watching),
+		storeSite:            configureSiteStorage(siteOpts, opts.Watching, opts.Log),
 		treeMain:             doctree.NewSimpleTree[map[nodeKey]*TemplInfo](),
 		treeShortcodes:       doctree.NewSimpleTree[map[string]map[TemplateDescriptor]*TemplInfo](),
 		templatesByPath:      hmaps.NewCache[string, *TemplInfo](),
@@ -248,6 +248,9 @@ type TemplInfo struct {
 
 	// The base template used, if any.
 	base *TemplInfo
+
+	// For partial decorator inner templates, the template the inner block was defined in.
+	decoratorOwner *TemplInfo
 
 	// The descriptior that this template represents.
 	D TemplateDescriptor
@@ -636,6 +639,31 @@ func (s *TemplateStore) LookupPartial(pth string) *TemplInfo {
 	return ti
 }
 
+// ResolvePartialName resolves partial names starting with "./" or "../"
+// relative to the directory of the calling partial.
+func (s *TemplateStore) ResolvePartialName(ctx context.Context, name string) (string, error) {
+	if !strings.HasPrefix(name, "./") && !strings.HasPrefix(name, "../") {
+		return name, nil
+	}
+	cur := tpl.Context.CurrentTemplate.Get(ctx)
+	if cur == nil {
+		return "", fmt.Errorf("relative partial path %q can only be used from within a partial", name)
+	}
+	ti := cur.CurrentTemplateInfoOps.(*TemplInfo)
+	for ti.decoratorOwner != nil {
+		ti = ti.decoratorOwner
+	}
+	if ti.category != CategoryPartial {
+		return "", fmt.Errorf("relative partial path %q can only be used from within a partial, called from %q", name, ti.Name())
+	}
+	dir := strings.TrimPrefix(strings.TrimPrefix(ti.PathInfo.Dir(), "/"+containerPartials), "/")
+	resolved := path.Join(dir, name)
+	if resolved == ".." || strings.HasPrefix(resolved, "../") {
+		return "", fmt.Errorf("relative partial path %q in %q resolves outside the partials directory", name, ti.Name())
+	}
+	return resolved, nil
+}
+
 func (s *TemplateStore) LookupShortcodeByName(name string) *TemplInfo {
 	name = strings.ToLower(name)
 	ti, _ := s.shortcodesByName.Get(name)
@@ -815,7 +843,7 @@ func (t *TemplateStore) UnusedTemplates() []*TemplInfo {
 // but with a different template function execution context.
 func (s TemplateStore) WithSiteOpts(opts SiteOptions) *TemplateStore {
 	s.siteOpts = opts
-	s.storeSite = configureSiteStorage(opts, s.opts.Watching)
+	s.storeSite = configureSiteStorage(opts, s.opts.Watching, s.opts.Log)
 	return &s
 }
 
@@ -939,10 +967,12 @@ func (t *TemplateStore) addDeferredTemplate(owner *TemplInfo, name string, n *pa
 	}
 
 	t.templatesByPath.Set(name, &TemplInfo{
-		Fi:       owner.Fi,
-		PathInfo: owner.PathInfo,
-		D:        owner.D,
-		Template: templ,
+		Fi:             owner.Fi,
+		PathInfo:       owner.PathInfo,
+		D:              owner.D,
+		Template:       templ,
+		category:       owner.category,
+		decoratorOwner: owner.decoratorOwner,
 	})
 
 	return nil
@@ -1895,7 +1925,7 @@ func (s *TemplateStore) toKeyCategoryAndDescriptor(p *paths.Path, fi hugofs.File
 	if category == CategoryMarkup {
 		// We store all template nodes for a given directory on the same level.
 		k1 = strings.TrimSuffix(k1, "/_markup")
-		v, found := strings.CutPrefix(d.LayoutFromTemplate, "render-")
+		v, found := strings.CutPrefix(nameNoIdentifier, "render-")
 		if !found {
 			return "", "", 0, TemplateDescriptor{}, nil, fmt.Errorf("unrecognized render hook template")
 		}
@@ -1906,8 +1936,6 @@ func (s *TemplateStore) toKeyCategoryAndDescriptor(p *paths.Path, fi hugofs.File
 			d.Variant1 = v[:hyphenIdx]
 			d.Variant2 = v[hyphenIdx+1:]
 		}
-
-		d.LayoutFromTemplate = "" // This allows using page layout as part of the key for lookups.
 	}
 
 	return k1, k2, category, d, vactorStore, nil
@@ -2086,7 +2114,7 @@ func (best *bestMatch) isBetter(w weight, ti *TemplInfo) bool {
 	// Note that for render hook templates, we need to make
 	// the embedded render hook template win if they're a better match,
 	// e.g. render-codeblock-goat.html.
-	if best.templ.category != CategoryMarkup && best.w.w1 > 0 {
+	if (best.templ.category != CategoryMarkup || best.templ.D.Variant1 == "table") && best.w.w1 > 0 {
 		currentBestIsEmbedded := best.templ.subCategory == SubCategoryEmbedded
 		if currentBestIsEmbedded {
 			if ti.subCategory != SubCategoryEmbedded {
@@ -2124,6 +2152,10 @@ func (best *bestMatch) isBetter(w weight, ti *TemplInfo) bool {
 
 		if w.distance < best.w.distance {
 			return true
+		}
+
+		if w.wfallback != best.w.wfallback {
+			return w.wfallback > best.w.wfallback
 		}
 
 		return ti.PathInfo.Path() < best.templ.PathInfo.Path()
@@ -2173,6 +2205,9 @@ type weight struct {
 	w3       int
 	wsm      int
 	distance int
+
+	// Used as a tie-breaker for fallback matches, e.g. to prefer the default output format.
+	wfallback int
 }
 
 func isLayoutStandard(s string) bool {
@@ -2188,7 +2223,7 @@ func (w weight) isEqualWeights(other weight) bool {
 	return w.w1 == other.w1 && w.w2 == other.w2 && w.w3 == other.w3
 }
 
-func configureSiteStorage(opts SiteOptions, watching bool) *storeSite {
+func configureSiteStorage(opts SiteOptions, watching bool, log loggers.Logger) *storeSite {
 	funcsv := make(map[string]reflect.Value)
 
 	for k, v := range opts.TemplateFuncs {
@@ -2217,6 +2252,7 @@ func configureSiteStorage(opts SiteOptions, watching bool) *storeSite {
 		opts: opts,
 		execHelper: &templateExecHelper{
 			watching:   watching,
+			log:        log,
 			funcs:      funcsv,
 			site:       reflect.ValueOf(opts.Site),
 			siteParams: reflect.ValueOf(opts.Site.Params()),

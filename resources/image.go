@@ -321,8 +321,24 @@ func (i *imageResource) Filter(filters ...any) (images.ImageResource, error) {
 		return nil, err
 	}
 
-	confMain.Action = "filter"
-	confMain.Key = hashing.HashString(gfilters)
+	confMain.Action = images.ActionFilter
+	opts := []any{gfilters}
+	if images.MainImageVersionNumber > 0 {
+		opts = append(opts, images.MainImageVersionNumber)
+	}
+	if v := images.FormatVersionNumbers[confMain.TargetFormat]; v > 0 {
+		opts = append(opts, v)
+	}
+	confMain.Key = hashing.HashString(opts...)
+
+	// Geometric filters cannot introduce colors outside the source palette.
+	for _, f := range gfilters {
+		switch images.UnwrapFilter(f).(type) {
+		case images.ImageProcessSpecProvider, images.ImageFilterFromOrientationProvider:
+		default:
+			confMain.PreserveSourcePalette = false
+		}
+	}
 
 	return i.doWithImageConfig(confMain, func(src image.Image) (image.Image, error) {
 		var filters []gift.Filter
@@ -360,6 +376,9 @@ func (i *imageResource) processActionSpec(action, spec string) (images.ImageReso
 	ir, err := i.processOptions(options)
 	if err != nil {
 		if sourcePath := i.sourcePath(); sourcePath != "" {
+			if action == "" {
+				action = "process"
+			}
 			err = fmt.Errorf("failed to %s image %q: %w", action, sourcePath, err)
 		}
 		return nil, err
@@ -412,7 +431,7 @@ func (i *imageResource) doWithImageConfig(conf images.ImageConfig, f func(src im
 			<-imageProcSem
 		}()
 
-		src, err := i.DecodeImage()
+		src, err := i.decodeImage(conf.FirstFrameOnly || !conf.TargetFormat.SupportsAnimation())
 		if err != nil {
 			return nil, nil, &os.PathError{Op: conf.Action, Path: i.TargetPath(), Err: err}
 		}
@@ -438,7 +457,7 @@ func (i *imageResource) doWithImageConfig(conf images.ImageConfig, f func(src im
 			converted = tmp
 		}
 
-		if conf.TargetFormat == images.PNG {
+		if conf.TargetFormat == images.PNG && conf.PreserveSourcePalette {
 			// Apply the colour palette from the source
 			if paletted, ok := src.(*image.Paletted); ok {
 				palette := paletted.Palette
@@ -467,16 +486,20 @@ func (i *imageResource) doWithImageConfig(conf images.ImageConfig, f func(src im
 	return img, nil
 }
 
-// DecodeImage decodes the image source into an Image.
+// DecodeImage decodes the first frame of the image source into an Image.
 // This for internal use only.
 func (i *imageResource) DecodeImage() (image.Image, error) {
+	return i.decodeImage(true)
+}
+
+func (i *imageResource) decodeImage(firstFrameOnly bool) (image.Image, error) {
 	f, err := i.ReadSeekCloser()
 	if err != nil {
 		return nil, fmt.Errorf("failed to open image for decode: %w", err)
 	}
 	defer f.Close()
 
-	return i.getSpec().Imaging.Codec.DecodeFormat(i.Format, f)
+	return i.getSpec().Imaging.Codec.DecodeFormat(i.Format, f, firstFrameOnly)
 }
 
 func (i *imageResource) clone(img image.Image) *imageResource {

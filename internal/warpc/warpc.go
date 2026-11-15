@@ -62,6 +62,9 @@ func GetWASMDeps() [][2]string {
 //go:embed wasm/quickjs.wasm
 var quickjsWasm []byte
 
+// The import name used by Javy's dynamically linked modules.
+const quickjsPluginName = "javy-default-plugin-v4"
+
 //go:embed wasm/webp.wasm
 var webpWasm []byte
 
@@ -173,8 +176,16 @@ type dispatcher[Q, R any] struct {
 	inOut   *inOut
 	inGroup *errgroup.Group
 
-	shutdown bool
-	closing  bool
+	shutdown atomic.Bool
+	closing  atomic.Bool
+}
+
+// errShutdown returns the error to report for calls made after shutdown.
+func (d *dispatcher[Q, R]) errShutdown() error {
+	if err := d.inOut.abortErr(); err != nil {
+		return err
+	}
+	return ErrShutdown
 }
 
 type inOut struct {
@@ -184,6 +195,33 @@ type inOut struct {
 	stdoutBinary hugio.ReadWriteCloser
 	dec          *json.Decoder
 	enc          *json.Encoder
+
+	// closePipes closes the pipes with err, which unblocks any
+	// pending reads and writes on both sides with that error.
+	closePipes func(err error)
+
+	abortMu    sync.Mutex
+	abortedErr error
+}
+
+// abort marks the instance as broken and closes its pipes with err, which
+// fails any pending and future calls to it with that error. The instance
+// itself exits when it next reads or writes; we cannot interrupt a busy guest
+// without WithCloseOnContextDone, which makes encoding several times slower.
+func (p *inOut) abort(err error) {
+	p.abortMu.Lock()
+	if p.abortedErr == nil {
+		p.abortedErr = err
+	}
+	p.abortMu.Unlock()
+	p.closePipes(err)
+}
+
+// abortErr returns the error the instance was aborted with, if any.
+func (p *inOut) abortErr() error {
+	p.abortMu.Lock()
+	defer p.abortMu.Unlock()
+	return p.abortedErr
 }
 
 func (p *inOut) Close() error {
@@ -199,6 +237,19 @@ func (p *inOut) Close() error {
 }
 
 var ErrShutdown = fmt.Errorf("dispatcher is shutting down")
+
+// ErrBroken is wrapped by errors from a WASM instance that has crashed or
+// stopped responding. Such an instance cannot be used anymore; the
+// dispatchers must be closed and recreated to recover.
+var ErrBroken = errors.New("wasm instance is broken")
+
+type brokenError struct {
+	err error
+}
+
+func (e *brokenError) Error() string        { return e.err.Error() }
+func (e *brokenError) Unwrap() error        { return e.err }
+func (e *brokenError) Is(target error) bool { return target == ErrBroken }
 
 var timerPool = sync.Pool{}
 
@@ -234,7 +285,7 @@ func (p *dispatcherPool[Q, R]) Execute(ctx context.Context, q Message[Q]) (Messa
 		return d.zeroR, err
 	}
 
-	timer := getTimer(30 * time.Second)
+	timer := getTimer(p.opts.Timeout)
 	defer putTimer(timer)
 
 	select {
@@ -244,7 +295,12 @@ func (p *dispatcherPool[Q, R]) Execute(ctx context.Context, q Message[Q]) (Messa
 	case <-ctx.Done():
 		return d.zeroR, ctx.Err()
 	case <-timer.C:
-		return d.zeroR, errors.New("timeout")
+		// We don't know the state of the instance, and a late response
+		// would be written to a destination the caller has given up on,
+		// so stop it.
+		err := &brokenError{fmt.Errorf("%s: timed out after %s waiting for %q response; see the timeout configuration option", p.opts.Main.Name, p.opts.Timeout, q.Header.Command)}
+		d.inOut.abort(err)
+		return d.zeroR, err
 	}
 
 	if call.err != nil {
@@ -277,8 +333,8 @@ func (d *dispatcher[Q, R]) newCall(q Message[Q]) (*call[Q, R], error) {
 		responseKinds: responseKinds,
 	}
 
-	if d.shutdown || d.closing {
-		call.err = ErrShutdown
+	if d.shutdown.Load() || d.closing.Load() {
+		call.err = d.errShutdown()
 		call.done()
 		return call, nil
 	}
@@ -291,12 +347,9 @@ func (d *dispatcher[Q, R]) newCall(q Message[Q]) (*call[Q, R], error) {
 }
 
 func (d *dispatcher[Q, R]) send(call *call[Q, R]) error {
-	d.mu.Lock()
-	if d.closing || d.shutdown {
-		d.mu.Unlock()
-		return ErrShutdown
+	if d.closing.Load() || d.shutdown.Load() {
+		return d.errShutdown()
 	}
-	d.mu.Unlock()
 
 	d.encodeMu.Lock()
 	defer d.encodeMu.Unlock()
@@ -326,6 +379,10 @@ func (d *dispatcher[Q, R]) inputBlobs() error {
 	for {
 		id, length, err := textandbinarywriter.ReadBlobHeader(d.inOut.stdoutBinary)
 		if err != nil {
+			if d.closing.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe)) {
+				// Expected, Close closes this pipe (both ends).
+				err = ErrShutdown
+			}
 			inputErr = err
 			break
 		}
@@ -405,16 +462,20 @@ func (d *dispatcher[Q, R]) inputJSON() error {
 	}
 
 	// Terminate pending calls.
-	d.shutdown = true
+	d.shutdown.Store(true)
 	if inputErr != nil {
 		isEOF := inputErr == io.EOF || inputErr == io.ErrClosedPipe || strings.Contains(inputErr.Error(), "already closed")
 		if isEOF {
-			if d.closing {
+			if d.closing.Load() {
 				inputErr = ErrShutdown
 			} else {
 				inputErr = io.ErrUnexpectedEOF
 			}
 		}
+	}
+
+	if err := d.inOut.abortErr(); err != nil {
+		inputErr = err
 	}
 
 	d.mu.Lock()
@@ -468,7 +529,7 @@ func (call *call[Q, R]) done() {
 // Binary represents a WebAssembly binary.
 type Binary struct {
 	// The name of the binary.
-	// For 	quickjs, this must match the instance import name, "javy_quickjs_provider_v2".
+	// For quickjs, this must match the instance import name, see quickjsPluginName.
 	// For the main module, we only use this for caching.
 	Name string
 
@@ -501,6 +562,9 @@ type Options struct {
 
 	// Memory limit in MiB.
 	Memory int
+
+	// Timeout for a single call. Defaults to 30 seconds.
+	Timeout time.Duration
 }
 
 func (o *Options) init() error {
@@ -511,6 +575,9 @@ func (o *Options) init() error {
 	if o.Warnf == nil {
 		o.Warnf = func(format string, v ...any) {
 		}
+	}
+	if o.Memory <= 0 {
+		o.Memory = 32 // 32 MiB
 	}
 	return nil
 }
@@ -548,6 +615,10 @@ func Start[Q, R any](opts Options) (Dispatcher[Q, R], error) {
 
 	if opts.PoolSize == 0 {
 		opts.PoolSize = 1
+	}
+
+	if opts.Timeout <= 0 {
+		opts.Timeout = 30 * time.Second
 	}
 
 	d, err := newDispatcher[Q, R](opts)
@@ -634,17 +705,19 @@ func newDispatcher[Q, R any](opts Options) (*dispatcherPool[Q, R], error) {
 
 	inOuts := make([]*inOut, opts.PoolSize)
 	for i := range opts.PoolSize {
-		var stdinPipe, stdoutBinary hugio.ReadWriteCloser
+		var stdoutBinary hugio.ReadWriteCloser
 		var stdout io.WriteCloser
 		var jsonr io.Reader
 
-		stdinPipe = hugio.NewPipeReadWriteCloser()
+		stdinPipe := hugio.NewPipeReadWriteCloser()
 		stdoutPipe := hugio.NewPipeReadWriteCloser()
 		stdout = stdoutPipe
 
+		var stdoutBinaryPipe hugio.PipeReadWriteCloser
 		var zero Q
 		if _, ok := any(zero).(DestinationProvider); ok {
-			stdoutBinary = hugio.NewPipeReadWriteCloser()
+			stdoutBinaryPipe = hugio.NewPipeReadWriteCloser()
+			stdoutBinary = stdoutBinaryPipe
 			jsonr = stdoutPipe
 			stdout = textandbinarywriter.NewWriter(stdout, stdoutBinary)
 		} else {
@@ -657,6 +730,13 @@ func newDispatcher[Q, R any](opts Options) (*dispatcherPool[Q, R], error) {
 			stdoutBinary: stdoutBinary,
 			dec:          json.NewDecoder(jsonr),
 			enc:          json.NewEncoder(stdinPipe),
+			closePipes: func(err error) {
+				stdinPipe.PipeReader.CloseWithError(err)
+				stdoutPipe.PipeWriter.CloseWithError(err)
+				if stdoutBinaryPipe.PipeWriter != nil {
+					stdoutBinaryPipe.PipeWriter.CloseWithError(err)
+				}
+			},
 		}
 	}
 
@@ -679,23 +759,32 @@ func newDispatcher[Q, R any](opts Options) (*dispatcherPool[Q, R], error) {
 	}
 
 	toErr := func(what string, errBuff bytes.Buffer, err error) error {
+		if errBuff.Len() == 0 {
+			return fmt.Errorf("%s: %w", what, err)
+		}
 		return fmt.Errorf("%s: %s: %w", what, errBuff.String(), err)
 	}
 
 	run := func() error {
-		g, ctx := errgroup.WithContext(ctx)
+		var g errgroup.Group
 		for _, c := range inOuts {
 			g.Go(func() error {
 				var errBuff bytes.Buffer
 				stderr := io.MultiWriter(&errBuff, os.Stderr)
 				ctx := context.WithoutCancel(ctx)
+				// fail fails any pending and future calls to this instance.
+				fail := func(err error) error {
+					err = &brokenError{err}
+					c.abort(err)
+					return err
+				}
 				// WithStartFunctions allows us to call the _start function manually.
 				configBase := wazero.NewModuleConfig().WithStderr(stderr).WithStdout(c.stdout).WithStdin(c.stdin).WithStartFunctions()
 				if opts.Runtime.Data != nil {
 					// This needs to be anonymous, it will be resolved in the import resolver below.
 					runtimeInstance, err := r.InstantiateModule(ctx, runtimeModule, configBase.WithName(""))
 					if err != nil {
-						return toErr("quickjs", errBuff, err)
+						return fail(toErr("quickjs", errBuff, err))
 					}
 					ctx = experimental.WithImportResolver(
 						ctx,
@@ -710,10 +799,10 @@ func newDispatcher[Q, R any](opts Options) (*dispatcherPool[Q, R], error) {
 
 				mainInstance, err := r.InstantiateModule(ctx, mainModule, configBase.WithName(""))
 				if err != nil {
-					return toErr(opts.Main.Name, errBuff, err)
+					return fail(toErr(opts.Main.Name, errBuff, err))
 				}
 				if _, err := mainInstance.ExportedFunction("_start").Call(ctx); err != nil {
-					return toErr(opts.Main.Name, errBuff, err)
+					return fail(toErr(opts.Main.Name, errBuff, err))
 				}
 
 				// The console.log in the Javy/quickjs WebAssembly module will write to stderr.
@@ -764,18 +853,36 @@ func newDispatcher[Q, R any](opts Options) (*dispatcherPool[Q, R], error) {
 
 	dp.close = func() error {
 		for _, d := range dp.dispatchers {
-			d.closing = true
+			d.closing.Store(true)
 			if err := d.inOut.Close(); err != nil {
 				return err
 			}
 		}
 
+		var broken bool
 		for _, d := range dp.dispatchers {
+			err := d.inGroup.Wait()
+			if d.inOut.abortErr() != nil {
+				// Any error here is a consequence of the abort,
+				// which has already been reported to the callers.
+				broken = true
+				continue
+			}
 			// ErrShutdown is expected here; since Go 1.27 (json/v2), Decode
 			// surfaces the read error from the pipes we just closed.
-			if err := d.inGroup.Wait(); err != nil && err != ErrShutdown {
+			if err != nil && err != ErrShutdown {
 				return err
 			}
+		}
+
+		if broken {
+			// An aborted instance may still be busy (e.g. after a timeout)
+			// and will exit on its own; don't block on it.
+			go func() {
+				<-dp.donec
+				r.Close(ctx)
+			}()
+			return nil
 		}
 
 		// We need to wait for the WebAssembly instances to finish executing before we can close the runtime.
@@ -834,13 +941,15 @@ func (d *Dispatchers) Avif() (Dispatcher[AvifInput, AvifOutput], error) {
 
 func (d *Dispatchers) NewWepCodec() (*WebpCodec, error) {
 	return &WebpCodec{
-		d: d.Webp,
+		d:           d.Webp,
+		memoryLimit: int64(d.webp.opts.Memory) << 20,
 	}, nil
 }
 
 func (d *Dispatchers) NewAvifCodec() (*AvifCodec, error) {
 	return &AvifCodec{
-		d: d.Avif,
+		d:           d.Avif,
+		memoryLimit: int64(d.avif.opts.Memory) << 20,
 	}, nil
 }
 
@@ -853,6 +962,11 @@ func (d *Dispatchers) Close() error {
 	}
 	if d.webp.started {
 		if err := d.webp.dispatcher.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if d.avif.started {
+		if err := d.avif.dispatcher.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -872,8 +986,11 @@ func AllDispatchers(katexOpts, webpOpts, avifOpts Options) *Dispatchers {
 	if err := webpOpts.init(); err != nil {
 		panic(err)
 	}
+	if err := avifOpts.init(); err != nil {
+		panic(err)
+	}
 	if katexOpts.Runtime.Data == nil {
-		katexOpts.Runtime = Binary{Name: "javy_quickjs_provider_v2", Data: quickjsWasm}
+		katexOpts.Runtime = Binary{Name: quickjsPluginName, Data: quickjsWasm}
 	}
 	if katexOpts.Main.Data == nil {
 		katexOpts.Main = Binary{Name: "renderkatex", Data: katexWasm}

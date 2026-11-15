@@ -1,6 +1,6 @@
 ---
 title: safe.HTML
-description: Declares the given string as a safeHTML string.
+description: Returns the given string declared as safe HTML.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [safeHTML]
     returnType: template.HTML
     signatures: [safe.HTML INPUT]
-aliases: [/functions/safehtml]
 ---
 
 ## Introduction

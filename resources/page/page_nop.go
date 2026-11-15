@@ -123,6 +123,14 @@ func (p *nopPage) Description() string {
 	return ""
 }
 
+func (p *nopPage) RawSummary() string {
+	return ""
+}
+
+func (p *nopPage) IsRootParam(key string) bool {
+	return false
+}
+
 func (p *nopPage) RefFrom(argsm map[string]any, source any) (string, error) {
 	return "", nil
 }
@@ -399,7 +407,7 @@ func (p *nopPage) RelRef(argsm map[string]any) (string, error) {
 	return "", nil
 }
 
-func (p *nopPage) Render(ctx context.Context, layout ...string) (template.HTML, error) {
+func (p *nopPage) Render(ctx context.Context, args ...any) (template.HTML, error) {
 	return "", nil
 }
 
@@ -423,7 +431,7 @@ func (p *nopPage) Store() *hstore.Scratch {
 	return nil
 }
 
-func (p *nopPage) RelatedKeywords(cfg related.IndexConfig) ([]related.Keyword, error) {
+func (p *nopPage) RelatedKeywords(cfg related.IndexConfig) ([]string, error) {
 	return nil, nil
 }
 

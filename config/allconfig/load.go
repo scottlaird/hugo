@@ -22,10 +22,10 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/gobwas/glob"
 	"github.com/gohugoio/hugo/common/herrors"
 	"github.com/gohugoio/hugo/common/hexec"
 	"github.com/gohugoio/hugo/common/hmaps"
+	"github.com/gohugoio/hugo/common/hstrings"
 	"github.com/gohugoio/hugo/common/hugo"
 	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/common/paths"
@@ -89,7 +89,7 @@ func LoadConfig(d ConfigSourceDescriptor) (configs *Configs, err error) {
 			return nil, fmt.Errorf("failed to create config from modules config: %w", err)
 		}
 		configs.LoadingInfo.ConfigFiles = append(configs.LoadingInfo.ConfigFiles, l.ModulesConfigFiles...)
-	} else if err := configs.transientErr(); err != nil {
+	} else if err := configs.transientErr(); err != nil && !d.IgnoreModuleDoesNotExist {
 		return nil, fmt.Errorf("failed to create config: %w", err)
 	}
 
@@ -198,6 +198,13 @@ func (l configLoader) normalizeCfg(cfg config.Provider) error {
 		}
 	}
 
+	if b, ok := cfg.Get("cleanDestinationDir").(bool); ok {
+		hugo.Deprecate("project config cleanDestinationDir", "Use build.cleanDestinationDir.enable instead.", "v0.167.0")
+		if b {
+			cfg.Set("build.cleanDestinationDir.enable", true)
+		}
+	}
+
 	return nil
 }
 
@@ -211,6 +218,18 @@ func (l configLoader) cleanExternalConfig(cfg config.Provider) error {
 func (l configLoader) applyFlagsOverrides(cfg config.Provider) error {
 	for _, k := range cfg.Keys() {
 		l.cfg.Set(k, cfg.Get(k))
+	}
+	return nil
+}
+
+// applyOsEnvAndFlagsOverrides applies the OS environment overrides followed by the flags,
+// so flags take precedence over OS environment variables.
+func (l configLoader) applyOsEnvAndFlagsOverrides(d ConfigSourceDescriptor) error {
+	if err := l.applyOsEnvOverrides(d.Environ); err != nil {
+		return err
+	}
+	if d.Flags != nil {
+		return l.applyFlagsOverrides(d.Flags)
 	}
 	return nil
 }
@@ -400,8 +419,8 @@ func (l *configLoader) loadConfigMain(d ConfigSourceDescriptor) (config.LoadConf
 	}
 
 	// Some settings are used before we're done collecting all settings,
-	// so apply OS environment both before and after.
-	if err := l.applyOsEnvOverrides(d.Environ); err != nil {
+	// so apply OS environment and flags both before and after.
+	if err := l.applyOsEnvAndFlagsOverrides(d); err != nil {
 		return res, l.ModulesConfig, err
 	}
 
@@ -425,13 +444,7 @@ func (l *configLoader) loadConfigMain(d ConfigSourceDescriptor) (config.LoadConf
 
 	res.ConfigFiles = append(res.ConfigFiles, l.ModulesConfigFiles...)
 
-	if d.Flags != nil {
-		if err := l.applyFlagsOverrides(d.Flags); err != nil {
-			return res, l.ModulesConfig, err
-		}
-	}
-
-	if err := l.applyOsEnvOverrides(d.Environ); err != nil {
+	if err := l.applyOsEnvAndFlagsOverrides(d); err != nil {
 		return res, l.ModulesConfig, err
 	}
 
@@ -451,7 +464,7 @@ func (l *configLoader) loadModules(configs *Configs, ignoreModuleDoesNotExist bo
 
 	cfg := configs.LoadingInfo.Cfg
 
-	var ignoreVendor glob.Glob
+	var ignoreVendor hstrings.Matcher
 	if s := conf.IgnoreVendorPaths; s != "" {
 		ignoreVendor, _ = hglob.GetGlob(hglob.NormalizePath(s))
 	}
