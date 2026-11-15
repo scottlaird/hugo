@@ -1,13 +1,12 @@
 ---
 title: RenderString
-description: Renders markup to HTML.
+description: Returns the given markup rendered to HTML.
 categories: []
 keywords: []
 params:
   functions_and_methods:
     returnType: template.HTML
     signatures: ['PAGE.RenderString [OPTIONS] MARKUP']
-aliases: [/functions/renderstring]
 ---
 
 The `RenderString` method on a `Page` object renders markup to HTML.
@@ -36,7 +35,7 @@ Render Markdown content to HTML in block display mode:
 {{ $s | .RenderString $opts }} → <p>An <em>emphasized</em> word</p>
 ```
 
-Render [Pandoc] content to HTML in block display mode:
+Render [Pandoc][] content to HTML in block display mode:
 
 ```go-html-template
 {{ $s := "H~2~O" }}

@@ -184,6 +184,12 @@ func NewIntegrationTestBuilder(conf IntegrationTestConfig) *IntegrationTestBuild
 
 	data := txtar.Parse([]byte(conf.TxtarString))
 
+	if conf.FileContentPrefix != "" {
+		for i, f := range data.Files {
+			data.Files[i].Data = append([]byte(conf.FileContentPrefix), f.Data...)
+		}
+	}
+
 	if conf.NFDFormOnDarwin {
 		for i, f := range data.Files {
 			data.Files[i].Name = norm.NFD.String(f.Name)
@@ -480,6 +486,13 @@ func (s *IntegrationTestBuilder) AssertFileContentExact(filename string, matches
 
 func (s *IntegrationTestBuilder) AssertNoRenderShortcodesArtifacts() {
 	s.Helper()
+	s.AssertStringPublished("! __hugo_ctx")
+}
+
+func (s *IntegrationTestBuilder) AssertStringPublished(match string) {
+	s.Helper()
+	var negate bool
+	match, negate = s.negate(match)
 	afero.Walk(s.fs.PublishDir, "", func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() {
 			return err
@@ -491,7 +504,7 @@ func (s *IntegrationTestBuilder) AssertNoRenderShortcodesArtifacts() {
 		content, err := afero.ReadFile(s.fs.PublishDir, path)
 		s.Assert(err, qt.IsNil)
 		comment := qt.Commentf("File: %s\n%s", path, string(content))
-		s.Assert(strings.Contains(string(content), "__hugo_ctx"), qt.IsFalse, comment)
+		s.Assert(strings.Contains(string(content), match), qt.Equals, !negate, comment)
 		return nil
 	})
 }
@@ -568,7 +581,7 @@ func (s *IntegrationTestBuilder) AssertFs(fs afero.Fs, matches ...string) {
 	}
 	printFsLines := strings.Split(buff.String(), "\n")
 	sort.Strings(printFsLines)
-	content := strings.TrimSpace((strings.Join(printFsLines, "\n")))
+	content := strings.TrimSpace(strings.Join(printFsLines, "\n"))
 	for _, m := range matches {
 		cm := qt.Commentf("Match: %q\nIn:\n%s", m, content)
 		lines := strings.SplitSeq(m, "\n")
@@ -924,8 +937,9 @@ func (s *IntegrationTestBuilder) initBuilder() error {
 
 		if s.Cfg.Running {
 			flags.Set("internal", hmaps.Params{
-				"running": s.Cfg.Running,
-				"watch":   s.Cfg.Running,
+				"running":        s.Cfg.Running,
+				"watch":          s.Cfg.Running,
+				"fastRenderMode": s.Cfg.FastRenderMode,
 			})
 		} else if s.Cfg.Watching {
 			flags.Set("internal", hmaps.Params{
@@ -1010,11 +1024,6 @@ func (s *IntegrationTestBuilder) initBuilder() error {
 		s.fs = fs
 
 		if s.Cfg.NeedsNpmInstall || len(s.Cfg.NeedsNpmGlobalInstall) > 0 {
-			if s.Cfg.NeedsNpmInstall {
-				wd, _ := os.Getwd()
-				s.Assert(os.Chdir(s.Cfg.WorkingDir), qt.IsNil)
-				s.C.Cleanup(func() { os.Chdir(wd) })
-			}
 			sc := security.DefaultConfig
 			sc.Exec.Allow, err = security.NewWhitelist("npm")
 			s.Assert(err, qt.IsNil)
@@ -1036,7 +1045,7 @@ func (s *IntegrationTestBuilder) initBuilder() error {
 					}
 				})
 			} else {
-				command, err := ex.New("npm", "install")
+				command, err := ex.New("npm", "install", hexec.WithDir(s.Cfg.WorkingDir))
 				s.Assert(err, qt.IsNil)
 				s.Assert(command.Run(), qt.IsNil)
 			}
@@ -1207,6 +1216,9 @@ type IntegrationTestConfig struct {
 	// - filenames with a .png or .jpg extension will be treated as binary and base64 decoded.
 	TxtarString string
 
+	// Prefix to add to all file contents, e.g. BOM.
+	FileContentPrefix string
+
 	// COnfig to use as the base. We will also read the config from the txtar.
 	BaseCfg config.Provider
 
@@ -1215,6 +1227,10 @@ type IntegrationTestConfig struct {
 
 	// Whether to simulate server mode.
 	Running bool
+
+	// Whether to simulate the server's fast render mode.
+	// Only used when Running is set.
+	FastRenderMode bool
 
 	// Watch for changes.
 	// This is (currently) always set to true when Running is set.

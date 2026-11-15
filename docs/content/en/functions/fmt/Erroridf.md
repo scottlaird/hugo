@@ -1,6 +1,6 @@
 ---
 title: fmt.Erroridf
-description: Log a suppressible ERROR from a template.
+description: Logs a suppressible ERROR from a template.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [erroridf]
     returnType: string
     signatures: ['fmt.Erroridf ID FORMAT [INPUT]']
-aliases: [/functions/erroridf]
 ---
 
 {{% include "/_common/functions/fmt/format-string.md" %}}

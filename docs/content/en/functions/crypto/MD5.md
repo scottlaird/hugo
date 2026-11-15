@@ -1,6 +1,6 @@
 ---
 title: crypto.MD5
-description: Hashes the given input and returns its MD5 checksum encoded to a hexadecimal string.
+description: Returns the MD5 checksum of the given input, encoded to a hexadecimal string.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [md5]
     returnType: string
     signatures: [crypto.MD5 INPUT]
-aliases: [/functions/md5]
 ---
 
 ```go-html-template

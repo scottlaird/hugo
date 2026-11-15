@@ -1,6 +1,6 @@
 ---
 title: js.Build
-description: Bundle, transpile, tree shake, and minify JavaScript resources.
+description: Returns a resource created by bundling, transpiling, tree shaking, and minifying the given JavaScript resource.
 categories: []
 keywords: []
 params:
@@ -46,12 +46,16 @@ The `js.Build` function accepts an options map.
 `format`
 : (`string`) The output format. One of: `iife`, `cjs`, `esm`. Default is `iife`, a self-executing function, suitable for inclusion as a `<script>` tag.
 
+`importContext`
+: {{< new-in 0.165.0 />}}
+: (`resource.ResourceGetter`) A [resource getter](g) to use when resolving import statements. Hugo searches this context first, matching by the path as written in the statement, before falling back to the file system.
+
 `targetPath`
 : (`string`) If not set, the source path will be used as the base target path. Note that the target path's extension may change if the target MIME type is different, e.g. when the source is TypeScript.
 
 {{% include "/_common/functions/js/options.md" %}}
 
-## Import JS code from the assets directory
+## Import from the assets directory
 
 `js.Build` has full support for Hugo's [unified file system](g). You can see some simple examples in this [test project][], but in short this means that you can do this:
 
@@ -79,9 +83,7 @@ For other files (e.g. `JSON`, `CSS`) you need to use the relative path including
 import * as data from 'my/module/data.json';
 ```
 
-Any imports in a file outside `assets` or that does not resolve to a component inside `assets` will be resolved by [`esbuild`][] with the **project directory** as the resolve directory (used as the starting point when looking for `node_modules` etc.). Also see [`hugo mod npm pack`][]. If you have any imported npm dependencies in your project, you need to make sure to run `npm install` before you run `hugo build`.
-
-Also note the new `params` option that can be passed from template to your JS files, e.g.:
+Also note the [`params`](#params) option that can be passed from template to your JS files, e.g.:
 
 ```go-html-template
 {{ $js := resources.Get "js/main.js" | js.Build (dict "params" (dict "api" "https://example.org/api")) }}
@@ -97,14 +99,42 @@ Hugo will, by default, generate a `assets/jsconfig.json` file that maps the impo
 
 ## Node.js dependencies
 
-Use the `js.Build` function to include Node dependencies.
+Use the `js.Build` function to include Node dependencies. Run `npm install` to install your dependencies before you build your site.
 
-Any imports in a file outside `assets` or that does not resolve to a component inside `assets` will be resolved by [`esbuild`][] with the **project directory** as the resolve directory (used as the starting point when looking for `node_modules` etc.). Also see [`hugo mod npm pack`][]. If you have any imported npm dependencies in your project, you need to make sure to run `npm install` before you run `hugo build`.
-
-The start directory for resolving npm packages (aka. packages that live inside a `node_modules` directory) is always the main project directory.
+If an import does not resolve to a file in the `assets` directory, or if the importing file is outside the `assets` directory, [`esbuild`][] resolves the import. It looks for packages in `node_modules` directories, starting from the project directory, but only within the allowed paths. See [file system access](#file-system-access).
 
 > [!NOTE]
 > If you're developing a theme/component that is supposed to be imported and depends on dependencies inside `package.json`, we recommend reading about [`hugo mod npm pack`][], a tool to consolidate all the npm dependencies in a project.
+
+## File system access
+
+{{% include "/_common/functions/node-permissions/imports.md" %}}
+
+## Artifacts
+
+{{< new-in 0.165.0 />}}
+
+In addition to the main output, Hugo may publish other files as part of the build:
+
+- Files copied to the output directory by esbuild's `file` loader, such as fonts and images
+- A source map, when the `sourceMap` option is `external` or `linked`
+
+The `Data` method on the returned resource exposes these files as a slice of artifacts, where each artifact provides `MediaType`, `Permalink`, and `RelPermalink` methods.
+
+For example, to render preload links for image files published by the build:
+
+```go-html-template
+{{ with resources.Get "js/main.js" }}
+  {{ with . | js.Build }}
+    {{ range .Data.Artifacts }}
+      {{ if eq .MediaType.MainType "image" }}
+        <link rel="preload" href="{{ .RelPermalink }}" as="image" type="{{ .MediaType.Type }}">
+      {{ end }}
+    {{ end }}
+    <script src="{{ .RelPermalink }}"></script>
+  {{ end }}
+{{ end }}
+```
 
 ## Examples
 

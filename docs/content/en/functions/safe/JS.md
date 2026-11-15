@@ -1,6 +1,6 @@
 ---
 title: safe.JS
-description: Declares the given string as a safe JavaScript expression.
+description: Returns the given string declared as a safe JavaScript expression.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [safeJS]
     returnType: template.JS
     signatures: [safe.JS INPUT]
-aliases: [/functions/safejs]
 ---
 
 ## Introduction

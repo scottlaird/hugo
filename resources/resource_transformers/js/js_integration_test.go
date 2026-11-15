@@ -16,6 +16,7 @@ package js_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -106,7 +107,8 @@ COUNT2: {{ len .Data.Artifacts }}
 `
 
 	b := hugolib.Test(t, files, hugolib.TestOptOsFs())
-	b.AssertFileContent("public/index.html",
+	b.AssertFileContent(
+		"public/index.html",
 		"COUNT: 1",
 		"ARTIFACT: /js/main.js.map|https://example.org/js/main.js.map|application/source-map",
 		"COUNT2: 0",
@@ -447,4 +449,132 @@ JS Content:{{ $js.Content }}:End:
 	b.Assert(err, qt.IsNotNil)
 	b.Assert(err.Error(), qt.Contains, `execute of template failed: template: home.html:2:17`)
 	b.Assert(err.Error(), qt.Contains, `main.js:1:31": Could not resolve "./util1"`)
+}
+
+// ESBuild resolves imports not found in /assets on its own, following symlinks
+// and with no notion of the project root.
+func TestBuildImportOutsideProject(t *testing.T) {
+	c := qt.New(t)
+
+	base := t.TempDir()
+	secret := filepath.Join(base, "secret.txt")
+	c.Assert(os.WriteFile(secret, []byte("PWN-SECRET"), 0o644), qt.IsNil)
+
+	files := `
+-- hugo.toml --
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "robotsTXT", "section", "page"]
+theme = "mytheme"
+SECURITY
+-- themes/mytheme/hugo.toml --
+-- themes/mytheme/assets/js/main.js --
+import secret from "IMPORT";
+import { helper } from "./helper.js";
+console.log(secret, helper);
+-- themes/mytheme/assets/js/helper.js --
+export const helper = "LOCAL-HELPER-OK";
+-- layouts/all.html --
+{{ $js := resources.Get "js/main.js" | js.Build }}
+RESULT:<pre>{{ $js.Content }}</pre>
+`
+
+	build := func(c *qt.C, workingDir, imp, security string) (*hugolib.IntegrationTestBuilder, error) {
+		f := strings.ReplaceAll(files, "IMPORT", imp)
+		f = strings.ReplaceAll(f, "SECURITY", security)
+		return hugolib.NewIntegrationTestBuilder(
+			hugolib.IntegrationTestConfig{
+				T:           c,
+				TxtarString: f,
+				NeedsOsFS:   true,
+				WorkingDir:  workingDir,
+			},
+		).BuildE()
+	}
+
+	const outsideErr = `.*"[^"]*secret.txt" resolves to "[^"]*secret.txt" outside the project.*allowRead.*`
+
+	c.Run("Relative import", func(c *qt.C) {
+		_, err := build(c, filepath.Join(base, "relative"), "../secret.txt", "")
+		c.Assert(err, qt.ErrorMatches, outsideErr)
+	})
+
+	c.Run("Symlink in theme", func(c *qt.C) {
+		if runtime.GOOS == "windows" {
+			c.Skip("symlinks")
+		}
+		workingDir := filepath.Join(base, "symlink")
+		linkDir := filepath.Join(workingDir, "themes", "mytheme", "assets", "link")
+		c.Assert(os.MkdirAll(linkDir, 0o755), qt.IsNil)
+		c.Assert(os.Symlink(secret, filepath.Join(linkDir, "cred.txt")), qt.IsNil)
+		_, err := build(c, workingDir, "./themes/mytheme/assets/link/cred.txt", "")
+		c.Assert(err, qt.ErrorMatches, outsideErr)
+	})
+
+	c.Run("Relative import, target in allowRead", func(c *qt.C) {
+		b, err := build(c, filepath.Join(base, "allowed"), "../secret.txt", `
+[security.node.permissions]
+allowRead = [".", ".."]
+`)
+		c.Assert(err, qt.IsNil)
+		b.AssertFileContent("public/index.html", "PWN-SECRET", "LOCAL-HELPER-OK")
+	})
+}
+
+// See issue 15435.
+func TestBuildCharset(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- assets/js/main.js --
+console.log("日本語");
+-- assets/css/main.css --
+p::before { content: "日本語"; }
+-- layouts/home.html --
+{{ resources.Get "js/main.js" | js.Build (dict "targetPath" "js/ascii.js") | resources.Publish }}
+{{ resources.Get "js/main.js" | js.Build (dict "targetPath" "js/utf8.js" "charset" "utf8") | resources.Publish }}
+{{ resources.Get "css/main.css" | css.Build (dict "targetPath" "css/ascii.css") | resources.Publish }}
+{{ resources.Get "css/main.css" | css.Build (dict "targetPath" "css/utf8.css" "charset" "utf8") | resources.Publish }}
+`
+
+	b := hugolib.Test(t, files, hugolib.TestOptOsFs())
+
+	b.AssertFileContent("public/js/ascii.js", "! 日本語")
+	b.AssertFileContent("public/js/utf8.js", `"日本語"`)
+	b.AssertFileContent("public/css/ascii.css", "! 日本語")
+	b.AssertFileContent("public/css/utf8.css", `"日本語"`)
+
+	files = strings.Replace(files, `"charset" "utf8"`, `"charset" "foo"`, 1)
+	_, err := hugolib.TestE(t, files, hugolib.TestOptOsFs())
+	b.Assert(err, qt.ErrorMatches, `.*unsupported charset: "foo".*`)
+}
+
+// Issue 15481.
+func TestBuildBrowserDisabledModuleExtensionless(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "robotsTXT", "section", "page"]
+-- assets/main.js --
+import value from "browser-disabled-repro";
+console.log(value);
+-- node_modules/browser-disabled-repro/package.json --
+{
+  "name": "browser-disabled-repro",
+  "version": "1.0.0",
+  "main": "index.js",
+  "browser": {
+    "./util.inspect.js": false
+  }
+}
+-- node_modules/browser-disabled-repro/index.js --
+module.exports = require("./util.inspect");
+-- node_modules/browser-disabled-repro/util.inspect.js --
+module.exports = "EXCLUDED-FROM-BROWSER";
+-- layouts/home.html --
+{{ $js := resources.Get "main.js" | js.Build }}
+JS Content:{{ $js.Content }}:End:
+`
+
+	b := hugolib.Test(t, files, hugolib.TestOptOsFs())
+	b.AssertFileContent("public/index.html", "(disabled):node_modules/browser-disabled-repro/util.inspect", "! EXCLUDED-FROM-BROWSER")
 }

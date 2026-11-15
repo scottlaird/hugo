@@ -1,6 +1,6 @@
 ---
 title: safe.HTMLAttr
-description: Declares the given key-value pair as a safe HTML attribute.
+description: Returns the given key-value pair declared as a safe HTML attribute.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [safeHTMLAttr]
     returnType: template.HTMLAttr
     signatures: [safe.HTMLAttr INPUT]
-aliases: [/functions/safehtmlattr]
 ---
 
 ## Introduction

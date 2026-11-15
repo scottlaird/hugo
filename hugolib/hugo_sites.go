@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -110,6 +111,9 @@ type HugoSites struct {
 	printSiteAllPagesDeprecationInit    sync.Once
 	printSiteBuildDraftsDeprecationInit sync.Once
 	printSiteLanguagesDeprecationInit   sync.Once
+
+	// Logged deprecations of reserved front matter fields passed to .Param, keyed by field.
+	pageParamDeprecations sync.Map
 
 	// File change events with filename stored in this map will be skipped.
 	skipRebuildForFilenamesMu sync.Mutex
@@ -424,7 +428,7 @@ func (h *HugoSites) reportProgress(f func() (state terminal.ProgressState, progr
 
 		h.progressReporter.state = state
 		h.progressReporter.progress = progress
-		terminal.ReportProgress(h.Log.StdOut(), state, h.progressReporter.progress)
+		terminal.ReportProgress(h.Log.StdOut(), state, h.progressReporter.progress, "")
 	}
 
 	// Drain queue first.
@@ -438,6 +442,33 @@ func (h *HugoSites) reportProgress(f func() (state terminal.ProgressState, progr
 	h.progressReporter.queue = nil
 
 	handleOne(nil, f)
+}
+
+// reportBuildEnd reports done, idle (when watching or running) or error.
+// Fast builds are only reported when entering or leaving the error state.
+func (h *HugoSites) reportBuildEnd(err error) {
+	pr := h.progressReporter
+	pr.mu.Lock()
+	defer pr.mu.Unlock()
+
+	pr.queue = nil
+
+	if pr.t.IsZero() && (err == nil && pr.state != terminal.ProgressError || !terminal.PrintANSIColors(os.Stdout)) {
+		return
+	}
+
+	state := terminal.ProgressDone
+	if h.Conf.Watching() || h.Conf.Running() {
+		state = terminal.ProgressHidden
+	}
+	var msg string
+	if err != nil {
+		state = terminal.ProgressError
+		msg = err.Error()
+	}
+
+	pr.state, pr.progress, pr.renderProgressStart = state, 0, 0
+	terminal.ReportProgress(h.Log.StdOut(), state, 1.0, msg)
 }
 
 func (h *HugoSites) onPageRender() {
@@ -689,7 +720,8 @@ func (s *Site) preparePagesForRender(isRenderingSite bool, idx int) error {
 		return nil
 	}
 
-	return s.pageMap.forEeachPageIncludingBundledPages(nil,
+	return s.pageMap.forEeachPageIncludingBundledPages(
+		nil,
 		func(p *pageState) (bool, error) {
 			return false, initPage(p)
 		},
@@ -713,7 +745,8 @@ func (h *HugoSites) loadData() error {
 				}
 				return h.handleDataFile(source.NewFileInfo(fi))
 			},
-		})
+		},
+	)
 
 	if err := w.Walk(); err != nil {
 		return err
@@ -805,12 +838,10 @@ func (h *HugoSites) errWithFileContext(err error, f *source.File) error {
 }
 
 func (h *HugoSites) readData(f *source.File) (any, error) {
-	file, err := f.FileInfo().Meta().Open()
+	content, err := f.FileInfo().Meta().ReadAll()
 	if err != nil {
-		return nil, fmt.Errorf("readData: failed to open data file: %w", err)
+		return nil, fmt.Errorf("readData: failed to read data file: %w", err)
 	}
-	defer file.Close()
-	content := helpers.ReaderToBytes(file)
 
 	format := metadecoders.FormatFromString(f.Ext())
 	return metadecoders.Default.Unmarshal(content, format)

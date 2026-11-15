@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/scss"
+	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/dartsass"
 )
 
 func TestResourceChainBasic(t *testing.T) {
@@ -273,7 +273,7 @@ func TestResourceChains(t *testing.T) {
 		files     string
 		assert    func(b *IntegrationTestBuilder)
 	}{
-		{"tocss", func() bool { return scss.Supports() }, `
+		{"tocss", func() bool { return dartsass.Supports() }, `
 -- hugo.toml --
 baseURL = "http://example.com/"
 -- content/_index.md --
@@ -332,7 +332,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -351,10 +351,10 @@ T4: Content: {{ len $scssCustomTargetString.Content }}|RelPermalink: {{ $scssCus
 T5: Content: {{ $sass.Content }}|T5 RelPermalink: {{ $sass.RelPermalink }}|
 T6: {{ $bundle1.Permalink }}
 `, func(b *IntegrationTestBuilder) {
-			b.AssertFileContent("public/index.html", `T1: Len Content: 24|RelPermalink: /scss/styles2.css|Permalink: http://example.com/scss/styles2.css|MediaType: text/css`)
+			b.AssertFileContent("public/index.html", `T1: Len Content: 23|RelPermalink: /scss/styles2.css|Permalink: http://example.com/scss/styles2.css|MediaType: text/css`)
 			b.AssertFileContent("public/index.html", `T2: Content: body{color:#333}|RelPermalink: /scss/styles2.min.css`)
-			b.AssertFileContent("public/index.html", `T3: Content: 24|RelPermalink: /styles/main.css|MediaType: text/css`)
-			b.AssertFileContent("public/index.html", `T4: Content: 24|RelPermalink: /styles/main.css|MediaType: text/css`)
+			b.AssertFileContent("public/index.html", `T3: Content: 23|RelPermalink: /styles/main.css|MediaType: text/css`)
+			b.AssertFileContent("public/index.html", `T4: Content: 23|RelPermalink: /styles/main.css|MediaType: text/css`)
 			b.AssertFileContent("public/index.html", `T5: Content: .content-navigation {`)
 			b.AssertFileContent("public/index.html", `T5 RelPermalink: /sass/styles3.css|`)
 			b.AssertFileContent("public/index.html", `T6: http://example.com/styles/bundle1.css`)
@@ -426,7 +426,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -519,7 +519,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -598,7 +598,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -703,7 +703,7 @@ T3: Content: {{ $combinedJs.Content }}|{{ $combinedJs.RelPermalink }}
 		  color: $color;
 		}
 		-- assets/sass/styles3.sass --
-		$color: #333;
+		$color: #333
 		
 		.content-navigation
 		  border-color: $color
@@ -779,7 +779,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -851,7 +851,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -925,7 +925,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1006,7 +1006,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1077,7 +1077,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1161,7 +1161,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1242,7 +1242,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1311,7 +1311,7 @@ body {
   color: $color;
 }
 -- assets/sass/styles3.sass --
-$color: #333;
+$color: #333
 
 .content-navigation
   border-color: $color
@@ -1375,6 +1375,64 @@ JSON: {{ $json.RelPermalink }}: {{ $json.Content }}
 		"imagesByType: 2",
 		"applicationByType: 3",
 		"/jsons/data1.json: json1 content")
+}
+
+// See issue 10112.
+func TestResourcesMatchPreservePathCase(t *testing.T) {
+	t.Parallel()
+
+	const files = `
+-- hugo.toml --
+disablePathToLower = true
+disableKinds = ['taxonomy', 'term', 'rss', 'sitemap']
+-- assets/gallery/Travel/Iceland/TEST.txt --
+hello
+-- layouts/home.html --
+{{ range slice "PATTERNS" }}
+Pattern: {{ . }}: Match={{ range resources.Match . }}{{ .RelPermalink }}{{ end }}|GetMatch={{ with resources.GetMatch . }}{{ .RelPermalink }}{{ end }}|
+{{ end }}
+`
+
+	const (
+		literal  = "gallery/Travel/Iceland/*.txt"
+		lower    = "gallery/travel/iceland/*.txt"
+		wildcard = "*gallery/Travel/Iceland/*.txt"
+	)
+	for _, test := range []struct {
+		name     string
+		patterns []string
+	}{
+		{"literal first", []string{literal, lower, wildcard}},
+		{"lower first", []string{lower, wildcard, literal}},
+		{"wildcard first", []string{wildcard, literal, lower}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			b := Test(t, strings.ReplaceAll(files, "PATTERNS", strings.Join(test.patterns, `" "`)))
+			for _, pattern := range test.patterns {
+				b.AssertFileContent("public/index.html", "Pattern: "+pattern+": Match=/gallery/Travel/Iceland/TEST.txt|GetMatch=/gallery/Travel/Iceland/TEST.txt|")
+			}
+			b.AssertFileContent("public/gallery/Travel/Iceland/TEST.txt", "hello")
+		})
+	}
+}
+
+func TestResourcesMatchMountedPathCase(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['taxonomy', 'term', 'rss', 'sitemap']
+[[module.mounts]]
+source = 'images'
+target = 'assets/gallery/Travel/Iceland'
+-- images/TEST.txt --
+hello
+-- layouts/home.html --
+{{ range resources.Match "gallery/travel/iceland/*.txt" }}{{ .RelPermalink }}{{ end }}
+`
+	b := Test(t, files)
+	b.AssertFileContent("public/index.html", "/gallery/Travel/Iceland/TEST.txt")
+	b.AssertFileContent("public/gallery/Travel/Iceland/TEST.txt", "hello")
 }
 
 func TestResourceMinifyDisabled(t *testing.T) {

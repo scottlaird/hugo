@@ -1,6 +1,6 @@
 ---
 title: transform.Markdownify
-description: Renders Markdown to HTML.
+description: Returns the given Markdown rendered to HTML.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [markdownify]
     returnType: template.HTML
     signatures: [transform.Markdownify INPUT]
-aliases: [/functions/markdownify]
 ---
 
 ```go-html-template

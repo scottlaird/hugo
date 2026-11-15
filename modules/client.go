@@ -33,13 +33,12 @@ import (
 	"github.com/gohugoio/hugo/common/hashing"
 	"github.com/gohugoio/hugo/common/herrors"
 	"github.com/gohugoio/hugo/common/hexec"
+	"github.com/gohugoio/hugo/common/hstrings"
 	"github.com/gohugoio/hugo/common/hugio"
 	"github.com/gohugoio/hugo/common/loggers"
 	"github.com/gohugoio/hugo/config"
 
 	hglob "github.com/gohugoio/hugo/hugofs/hglob"
-
-	"github.com/gobwas/glob"
 
 	"github.com/gohugoio/hugo/hugofs"
 
@@ -88,7 +87,7 @@ func NewClient(cfg ClientConfig) *Client {
 		logger = loggers.NewDefault()
 	}
 
-	var noVendor glob.Glob
+	var noVendor hstrings.Matcher
 	if cfg.ModuleConfig.NoVendor != "" {
 		noVendor, _ = hglob.GetGlob(hglob.NormalizePath(cfg.ModuleConfig.NoVendor))
 	}
@@ -109,7 +108,7 @@ type Client struct {
 	fs     afero.Fs
 	logger loggers.Logger
 
-	noVendor glob.Glob
+	noVendor hstrings.Matcher
 
 	ccfg ClientConfig
 
@@ -405,7 +404,7 @@ func (c *Client) Clean(pattern string) error {
 		return err
 	}
 
-	var g glob.Glob
+	var g hstrings.Matcher
 
 	if pattern != "" {
 		var err error
@@ -885,11 +884,10 @@ func (c *Client) createThemeDirname(modulePath string, isProjectMod bool) (strin
 		return "", invalid
 	}
 
-	moduleDir := filepath.Join(c.ccfg.ThemesDir, modulePath)
-	if !isProjectMod && !strings.HasPrefix(moduleDir, c.ccfg.ThemesDir) {
+	if !isProjectMod && !filepath.IsLocal(modulePath) {
 		return "", invalid
 	}
-	return moduleDir, nil
+	return filepath.Join(c.ccfg.ThemesDir, modulePath), nil
 }
 
 // ClientConfig configures the module Client.
@@ -903,7 +901,7 @@ type ClientConfig struct {
 
 	// Ignore any _vendor directory for module paths matching the given pattern.
 	// This can be nil.
-	IgnoreVendor glob.Glob
+	IgnoreVendor hstrings.Matcher
 
 	// Ignore any module not found errors.
 	IgnoreModuleDoesNotExist bool

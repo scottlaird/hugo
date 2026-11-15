@@ -13,7 +13,6 @@ import (
 	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/markup/asciidocext"
 	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/dartsass"
-	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/scss"
 )
 
 const rebuildFilesSimple = `
@@ -132,13 +131,15 @@ func TestRebuildAddingALeaffBundleIssue13925(t *testing.T) {
 
 	b.AddFiles(
 		"content/mysection/mysectionbundle2/index.md", "",
-		"content/mysection/mysectionbundle2/mysectionbundletext.txt", "mysectionbundletext.txt").Build()
+		"content/mysection/mysectionbundle2/mysectionbundletext.txt", "mysectionbundletext.txt",
+	).Build()
 
 	b.AssertFileContent("public/mysection/mysectionbundle2/index.html", "Len Resources: 1|")
 
 	b.AddFiles(
 		"content/mynewsection/_index.md", "",
-		"content/mynewsection/mynewsectiontext.txt", "foo").Build()
+		"content/mynewsection/mynewsectiontext.txt", "foo",
+	).Build()
 
 	b.AssertFileContent("public/mynewsection/index.html", "Len Resources: 1|")
 }
@@ -663,9 +664,38 @@ Single: {{ .Title }}|{{ .Content }}|
 `
 	b := Test(t, files, TestOptRunning())
 	b.AssertFileContent("public/p1/index.html", "Single: P1|")
-	fmt.Println("===============")
 	b.EditFileReplaceAll("layouts/baseof.html", "Baseof", "Baseof Edited").Build()
 	b.AssertFileContent("public/p1/index.html", "Baseof Edited")
+}
+
+// Issue 15484.
+func TestRebuildBaseofAtomicSaveViaTempFile(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+disableKinds = ["term", "taxonomy", "rss", "sitemap"]
+disableLiveReload = true
+-- content/p1.md --
+---
+title: "P1"
+---
+-- layouts/baseof.html --
+Baseof: {{ block "main" . }}{{ end }}
+-- layouts/home.html --
+{{ define "main" }}Home.{{ end }}
+-- layouts/single.html --
+{{ define "main" }}Single: {{ .Title }}{{ end }}
+`
+	b := Test(t, files, TestOptRunning())
+	b.AssertFileContent("public/p1/index.html", "Baseof: Single: P1")
+
+	// Some editors save by writing to a temp file and renaming it into place.
+	b.AddFiles("layouts/baseof.html.tmp.1234", `Baseof Edited: {{ block "main" . }}{{ end }}`).
+		RenameFile("layouts/baseof.html.tmp.1234", "layouts/baseof.html").Build()
+	b.AssertFileContent("public/p1/index.html", "Baseof Edited: Single: P1")
+	b.AssertFileContent("public/index.html", "Baseof Edited: Home.")
 }
 
 func TestRebuildWithDeferEditRenderHook(t *testing.T) {
@@ -1025,7 +1055,8 @@ Codeblock Include: {{ .Title }}|
 
 `
 
-	b := TestRunning(t, files,
+	b := TestRunning(
+		t, files,
 		TestOptWarn(),
 		TestOptWithConfig(func(c *IntegrationTestConfig) {
 			c.BuildCfg = BuildCfg{testCounters: &buildCounters{}}
@@ -1364,7 +1395,8 @@ Content: {{ .Content }}|
 
 	testCounters := &buildCounters{}
 
-	b := TestRunning(t, files,
+	b := TestRunning(
+		t, files,
 		TestOptWithConfig(func(c *IntegrationTestConfig) {
 			c.BuildCfg = BuildCfg{testCounters: testCounters}
 		}),
@@ -1528,7 +1560,8 @@ console.log("Hello");
 foo();
 `
 
-	b := TestRunning(t, files,
+	b := TestRunning(
+		t, files,
 		TestOptOsFs(),
 	)
 
@@ -1605,7 +1638,8 @@ Single.
 {{ end }}
 `
 
-	b := TestRunning(t, files,
+	b := TestRunning(
+		t, files,
 		TestOptOsFs(),
 		TestOptWithNpmInstall(),
 	)
@@ -1762,7 +1796,8 @@ Home.
 	runTest := func(transpiler string) {
 		t.Run(transpiler, func(t *testing.T) {
 			files := strings.Replace(filesTemplate, "TRANSPILER", transpiler, 1)
-			b := TestRunning(t, files,
+			b := TestRunning(
+				t, files,
 				TestOptOsFs(),
 			)
 
@@ -1775,10 +1810,6 @@ Home.
 
 			b.AssertFileContent("public/index.html", "Home.", "background: blue")
 		})
-	}
-
-	if scss.Supports() {
-		runTest("libsass")
 	}
 
 	if dartsass.Supports() {
@@ -2210,4 +2241,204 @@ objects: ["o1"]
 	b.EditFileAtomicReplaceAll("content/objects/_index.md", "Objects content.", "Objects content edited.").Build()
 	b.AssertFileContent("public/objects/index.html", "Objects|taxonomy|<p>Objects content edited.</p>")
 	b.AssertFileContent("public/objects/o1/index.html", "O1|term|")
+}
+
+func TestRebuildEditMountedAssetOnlyRelPermalinkUsed(t *testing.T) {
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+disableLiveReload = true
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "section"]
+[module]
+[[module.mounts]]
+source = "assets"
+target = "assets"
+[[module.mounts]]
+source = "out"
+target = "assets/out"
+-- out/data.json --
+{"version": "v1"}
+-- content/_index.md --
+---
+title: "Home"
+---
+-- content/mytext.txt --
+mytext v1
+-- layouts/home.html --
+{{ $data := resources.Get "out/data.json" | minify }}
+Data: {{ $data.RelPermalink }}|
+`
+	b := TestRunning(t, files)
+	b.AssertFileContent("public/index.html", "Data: /out/data.min.json|")
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v1"}`)
+
+	// Simulate the periodic data refresh.
+	b.EditFileReplaceAll("out/data.json", "v1", "v2").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v2"}`)
+
+	// An unrelated edit to a home bundle resource must not revert the
+	// published data to an older version.
+	b.EditFileReplaceAll("content/mytext.txt", "mytext v1", "mytext v2").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v2"}`)
+
+	// One more refresh round.
+	b.EditFileReplaceAll("out/data.json", "v2", "v3").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v3"}`)
+}
+
+func TestRebuildEditMountedAssetContentUsed(t *testing.T) {
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+disableLiveReload = true
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "section"]
+[module]
+[[module.mounts]]
+source = "assets"
+target = "assets"
+[[module.mounts]]
+source = "out"
+target = "assets/out"
+-- out/data.json --
+{"version": "v1"}
+-- content/_index.md --
+---
+title: "Home"
+---
+-- content/mytext.txt --
+mytext v1
+-- layouts/home.html --
+{{ $data := resources.Get "out/data.json" | minify }}
+Data: {{ $data.RelPermalink }}|{{ $data.Content | safeHTML }}|
+`
+	b := TestRunning(t, files)
+	b.AssertFileContent("public/index.html", "Data: /out/data.min.json|")
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v1"}`)
+
+	b.EditFileReplaceAll("out/data.json", "v1", "v2").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v2"}`)
+	b.AssertFileContent("public/index.html", `{"version":"v2"}`)
+
+	b.EditFileReplaceAll("content/mytext.txt", "mytext v1", "mytext v2").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v2"}`)
+
+	b.EditFileReplaceAll("out/data.json", "v2", "v3").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v3"}`)
+	b.AssertFileContent("public/index.html", `{"version":"v3"}`)
+}
+
+func TestRebuildFastRenderEditMountedAssetNotRecentlyVisited(t *testing.T) {
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+disableLiveReload = true
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "section"]
+[module]
+[[module.mounts]]
+source = "assets"
+target = "assets"
+[[module.mounts]]
+source = "out"
+target = "assets/out"
+-- out/data.json --
+{"version": "v1"}
+-- content/_index.md --
+---
+title: "Home"
+---
+-- content/p1.md --
+---
+title: "P1"
+---
+-- layouts/home.html --
+{{ $data := resources.Get "out/data.json" | minify }}
+Data: {{ $data.RelPermalink }}|
+-- layouts/single.html --
+Single: {{ .Title }}|
+`
+	recentlyVisited := types.NewEvictingQueue[string](20).Add("/p1/")
+	b := TestRunning(t, files, func(cfg *IntegrationTestConfig) {
+		cfg.FastRenderMode = true
+		cfg.BuildCfg = BuildCfg{RecentlyTouched: recentlyVisited}
+	})
+
+	b.AssertFileContent("public/index.html", "Data: /out/data.min.json|")
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v1"}`)
+
+	// Simulate the periodic data refresh.
+	b.EditFileReplaceAll("out/data.json", "v1", "v2").Build()
+	b.AssertFileContent("public/out/data.min.json", `{"version":"v2"}`)
+}
+
+// See issue 15330.
+func TestRebuildEditTwoContentFilesInSameDirSameBatch(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "home", "section"]
+disableLiveReload = true
+-- content/a.md --
+---
+title: a
+---
+page a
+-- content/c.md --
+---
+title: c
+---
+page c
+-- layouts/page.html --
+{{ .Content }}|Summary: {{ .Summary }}|
+`
+	b := TestRunning(t, files)
+	b.AssertFileContent("public/c/index.html", "<p>page c</p>")
+
+	// a.md rewritten with identical content, c.md grows, same batch.
+	b.EditFiles("content/a.md", "---\ntitle: a\n---\npage a\n")
+	b.EditFiles("content/c.md", "---\ntitle: c\n---\npage c\nappended line\n")
+	b.Build()
+	b.AssertFileContent("public/c/index.html", "<p>page c\nappended line</p>")
+
+	// c.md shrinks.
+	b.EditFiles("content/a.md", "---\ntitle: a\n---\npage a\n")
+	b.EditFiles("content/c.md", "---\ntitle: c\n---\nc\n")
+	b.Build()
+	b.AssertFileContent("public/c/index.html", "<p>c</p>", "|Summary: <p>c</p>|")
+}
+
+// See issue 12838.
+func TestRebuildEditContentMountedAsAssets(t *testing.T) {
+	files := `
+-- hugo.toml --
+baseURL = "https://example.com"
+disableLiveReload = true
+disableKinds = ["taxonomy", "term", "rss", "sitemap", "section"]
+[[module.mounts]]
+source = "content"
+target = "assets"
+-- content/_index.md --
+---
+title: Home
+---
+home v1
+-- content/p1.md --
+---
+title: P1
+---
+p1 v1
+-- layouts/home.html --
+{{ .Content }}
+-- layouts/page.html --
+{{ .Content }}
+`
+	b := TestRunning(t, files)
+	b.AssertFileContent("public/index.html", "home v1")
+	b.AssertFileContent("public/p1/index.html", "p1 v1")
+
+	b.EditFileReplaceAll("content/_index.md", "home v1", "home v2").Build()
+	b.AssertFileContent("public/index.html", "home v2")
+
+	b.EditFileReplaceAll("content/p1.md", "p1 v1", "p1 v2").Build()
+	b.AssertFileContent("public/p1/index.html", "p1 v2")
 }

@@ -16,22 +16,25 @@ package sass
 import (
 	"fmt"
 	"maps"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/gohugoio/hugo/common/hexec"
 	"github.com/gohugoio/hugo/common/hmaps"
 	"github.com/gohugoio/hugo/common/hreflect"
 	"github.com/gohugoio/hugo/common/hstrings"
 	"github.com/gohugoio/hugo/common/types/css"
+	"github.com/gohugoio/hugo/hugofs"
 )
 
 const (
 	HugoVarsNamespace = "hugo:vars"
 	// Transpiler implementation can be controlled from the client by
 	// setting the 'transpiler' option.
-	// Default is currently 'libsass', but that may change.
-	TranspilerDart    = "dartsass"
+	TranspilerDart = "dartsass"
+	// TranspilerLibSass was removed in Hugo v0.170.0.
 	TranspilerLibSass = "libsass"
 )
 
@@ -101,11 +104,10 @@ func removeMaps(m map[string]any) map[string]any {
 	return res
 }
 
-func CreateVarsStyleSheet(transpiler string, vars map[string]any) string {
+func CreateVarsStyleSheet(vars map[string]any) string {
 	if vars == nil {
 		return ""
 	}
-	var varsStylesheet string
 
 	var varsSlice []string
 	for k, v := range vars {
@@ -128,23 +130,13 @@ func CreateVarsStyleSheet(transpiler string, vars map[string]any) string {
 				varsSlice = append(varsSlice, fmt.Sprintf("%s%s: %v;", prefix, k, v))
 			} else {
 				// unquote will preserve quotes around URLs etc. if needed.
-				if transpiler == TranspilerDart {
-					varsSlice = append(varsSlice, fmt.Sprintf("%s%s: string.unquote(%q);", prefix, k, v))
-				} else {
-					varsSlice = append(varsSlice, fmt.Sprintf("%s%s: unquote(%q);", prefix, k, v))
-				}
+				varsSlice = append(varsSlice, fmt.Sprintf("%s%s: string.unquote(%q);", prefix, k, v))
 			}
 		}
 	}
 	sort.Strings(varsSlice)
 
-	if transpiler == TranspilerDart {
-		varsStylesheet = `@use "sass:string";` + "\n" + strings.Join(varsSlice, "\n")
-	} else {
-		varsStylesheet = strings.Join(varsSlice, "\n")
-	}
-
-	return varsStylesheet
+	return `@use "sass:string";` + "\n" + strings.Join(varsSlice, "\n")
 }
 
 var (
@@ -173,4 +165,28 @@ func isTypedCSSValue(v any) bool {
 	}
 
 	return false
+}
+
+// FindFile returns the first of names found below one of dirs on the OS file system,
+// or "" if none. Absolute names are checked as is. This is the lookup the Sass
+// compilers would do on their own for imports not found in Hugo's file systems,
+// but the match must be inside the paths exec allows to read.
+func FindFile(exec *hexec.Exec, dirs, names []string) (string, error) {
+	for _, dir := range dirs {
+		for _, name := range names {
+			filename := name
+			if !filepath.IsAbs(filename) {
+				filename = filepath.Join(dir, name)
+			}
+			fi, err := hugofs.Os.Stat(filename)
+			if err != nil || fi.IsDir() {
+				continue
+			}
+			if err := exec.CheckReadPath(filename); err != nil {
+				return "", err
+			}
+			return filename, nil
+		}
+	}
+	return "", nil
 }

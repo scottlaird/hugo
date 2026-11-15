@@ -326,6 +326,13 @@ func (c *Client) FromRemote(uri string, optionsm map[string]any) (resource.Resou
 			// just use ".txt".
 			if strings.HasPrefix(contentType, "text/plain") {
 				extensionHints = []string{".txt"}
+			} else if mt, found := c.rs.MediaTypes().GetByType(baseContentType(contentType)); found && len(mt.Suffixes()) > 0 {
+				// Prefer Hugo's own media types, as the mime package's
+				// table depends on the OS and on whether the Hugo server
+				// has registered Hugo's media types.
+				for _, suffix := range mt.Suffixes() {
+					extensionHints = append(extensionHints, "."+suffix)
+				}
 			} else {
 				exts, _ := mime.ExtensionsByType(contentType)
 				if exts != nil {
@@ -464,6 +471,10 @@ var _ http.RoundTripper = (*transport)(nil)
 type transport struct {
 	Cfg    config.AllProvider
 	Logger loggers.Logger
+
+	// base does the actual round trip. It carries a dial-time hook that
+	// validates the resolved destination address (see New).
+	base http.RoundTripper
 }
 
 func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error) {
@@ -482,7 +493,7 @@ func (t *transport) RoundTrip(req *http.Request) (resp *http.Response, err error
 
 	for {
 		resp, retry, err = func() (*http.Response, bool, error) {
-			resp2, err := http.DefaultTransport.RoundTrip(req)
+			resp2, err := t.base.RoundTrip(req)
 			if err != nil {
 				return resp2, false, err
 			}
@@ -534,4 +545,14 @@ func shouldCache(statusCode int) bool {
 		return false
 	}
 	return true
+}
+
+// baseContentType returns the media type part of a Content-Type header value,
+// e.g. "application/rss+xml" for "application/rss+xml; charset=UTF-8".
+func baseContentType(contentType string) string {
+	if mt, _, err := mime.ParseMediaType(contentType); err == nil {
+		return mt
+	}
+	mt, _, _ := strings.Cut(contentType, ";")
+	return strings.TrimSpace(mt)
 }

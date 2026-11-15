@@ -19,8 +19,10 @@ import (
 	"io"
 	"iter"
 	"reflect"
+	"slices"
 
 	"github.com/gohugoio/hugo/common/herrors"
+	"github.com/gohugoio/hugo/common/hmaps"
 	"github.com/gohugoio/hugo/common/hreflect"
 
 	"github.com/gohugoio/hugo/tpl/internal/go_templates/texttemplate/parse"
@@ -47,6 +49,9 @@ type ExecHelper interface {
 	GetFunc(ctx context.Context, tmpl Preparer, name string) (reflect.Value, reflect.Value, bool)
 	GetMethod(ctx context.Context, tmpl Preparer, receiver reflect.Value, name string) (method reflect.Value, firstArg reflect.Value)
 	GetMapValue(ctx context.Context, tmpl Preparer, receiver, key reflect.Value) (reflect.Value, bool)
+	// RedirectField returns the name of a field or method to evaluate on receiver
+	// instead of the chain receiver.name.next, and whether to redirect.
+	RedirectField(ctx context.Context, tmpl Preparer, receiver reflect.Value, name, next string) (string, bool)
 	OnCalled(ctx context.Context, tmpl Preparer, name string, args []reflect.Value, result reflect.Value)
 }
 
@@ -231,6 +236,27 @@ func (s *state) evalFunction(dot reflect.Value, node *parse.IdentifierNode, cmd 
 // evalField evaluates an expression like (.Field) or (.Field arg1 arg2).
 // The 'final' argument represents the return value from the preceding
 // value of the pipeline, if any.
+// evalFieldChain evaluates .X.Y.Z possibly preceded by a non-identifier,
+// allowing the ExecHelper to replace two adjacent identifiers with one.
+func (s *state) evalFieldChain(dot, receiver reflect.Value, node parse.Node, ident []string, args []parse.Node, final reflect.Value) reflect.Value {
+	n := len(ident)
+	for i := 0; i < n-1; i++ {
+		// Added for Hugo.
+		if s.helper != nil {
+			if name, ok := s.helper.RedirectField(s.ctx, s.prep, receiver, ident[i], ident[i+1]); ok {
+				ident = slices.Concat(ident[:i], []string{name}, ident[i+2:])
+				n--
+				if i == n-1 {
+					break
+				}
+			}
+		}
+		receiver = s.evalField(dot, ident[i], node, nil, missingVal, receiver)
+	}
+	// Now if it's a method, it gets the arguments.
+	return s.evalField(dot, ident[n-1], node, args, final, receiver)
+}
+
 func (s *state) evalField(dot reflect.Value, fieldName string, node parse.Node, args []parse.Node, final, receiver reflect.Value) reflect.Value {
 	if !receiver.IsValid() {
 		if s.tmpl.option.missingKey == mapError { // Treat invalid value as missing map key.
@@ -578,4 +604,120 @@ func (t *Template) All() iter.Seq[*Template] {
 			}
 		}
 	}
+}
+
+var (
+	anyType                  = reflect.TypeFor[any]()
+	funcVariadicAnyString    = reflect.TypeFor[func(...any) string]()
+	funcString               = reflect.TypeFor[func() string]()
+	funcCtxVariadicAnyAnyErr = reflect.TypeFor[func(context.Context, ...any) (any, error)]()
+	funcAnyVariadicAnyBool   = reflect.TypeFor[func(any, ...any) bool]()
+	funcParams               = reflect.TypeFor[func() hmaps.Params]()
+	funcAnyAnyBoolErr        = reflect.TypeFor[func(any, any) (bool, error)]()
+	funcAnyStringErr         = reflect.TypeFor[func(any) (string, error)]()
+	funcCtxStringVariadicAny = reflect.TypeFor[func(context.Context, string, ...any) (any, error)]()
+	funcReflectValueBool     = reflect.TypeFor[func(reflect.Value) bool]()
+	funcMap                  = reflect.TypeFor[func() map[string]any]()
+	funcVariadicAnyMapErr    = reflect.TypeFor[func(...any) (map[string]any, error)]()
+	funcAny                  = reflect.TypeFor[func() any]()
+	funcBool                 = reflect.TypeFor[func() bool]()
+	funcStringVariadicAny    = reflect.TypeFor[func(string, ...any) string]()
+	funcAnyVariadicAnyAnyErr = reflect.TypeFor[func(any, ...any) (any, error)]()
+)
+
+// safeCall runs fun with args and returns the result and error, if any.
+// If the call panics, the panic value is returned as an error.
+// This replaces the upstream safeCall and calls the most common function
+// signatures directly, avoiding the allocations in reflect.Value.Call.
+// See issue 15385.
+func safeCall(fun reflect.Value, args []reflect.Value) (val reflect.Value, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(error); ok {
+				err = e
+			} else {
+				err = fmt.Errorf("%v", r)
+			}
+		}
+	}()
+
+	switch fun.Type() {
+	case funcVariadicAnyString:
+		f, _ := reflect.TypeAssert[func(...any) string](fun)
+		return reflect.ValueOf(f(anyArgs(args)...)), nil
+	case funcString:
+		f, _ := reflect.TypeAssert[func() string](fun)
+		return reflect.ValueOf(f()), nil
+	case funcCtxVariadicAnyAnyErr:
+		f, _ := reflect.TypeAssert[func(context.Context, ...any) (any, error)](fun)
+		ctx, _ := args[0].Interface().(context.Context)
+		v, err := f(ctx, anyArgs(args[1:])...)
+		return anyValue(v), err
+	case funcAnyVariadicAnyBool:
+		f, _ := reflect.TypeAssert[func(any, ...any) bool](fun)
+		return reflect.ValueOf(f(args[0].Interface(), anyArgs(args[1:])...)), nil
+	case funcParams:
+		f, _ := reflect.TypeAssert[func() hmaps.Params](fun)
+		return reflect.ValueOf(f()), nil
+	case funcAnyAnyBoolErr:
+		f, _ := reflect.TypeAssert[func(any, any) (bool, error)](fun)
+		v, err := f(args[0].Interface(), args[1].Interface())
+		return reflect.ValueOf(v), err
+	case funcAnyStringErr:
+		f, _ := reflect.TypeAssert[func(any) (string, error)](fun)
+		v, err := f(args[0].Interface())
+		return reflect.ValueOf(v), err
+	case funcCtxStringVariadicAny:
+		f, _ := reflect.TypeAssert[func(context.Context, string, ...any) (any, error)](fun)
+		ctx, _ := args[0].Interface().(context.Context)
+		v, err := f(ctx, args[1].String(), anyArgs(args[2:])...)
+		return anyValue(v), err
+	case funcReflectValueBool:
+		f, _ := reflect.TypeAssert[func(reflect.Value) bool](fun)
+		v, _ := reflect.TypeAssert[reflect.Value](args[0])
+		return reflect.ValueOf(f(v)), nil
+	case funcMap:
+		f, _ := reflect.TypeAssert[func() map[string]any](fun)
+		return reflect.ValueOf(f()), nil
+	case funcVariadicAnyMapErr:
+		f, _ := reflect.TypeAssert[func(...any) (map[string]any, error)](fun)
+		v, err := f(anyArgs(args)...)
+		return reflect.ValueOf(v), err
+	case funcAny:
+		f, _ := reflect.TypeAssert[func() any](fun)
+		return anyValue(f()), nil
+	case funcBool:
+		f, _ := reflect.TypeAssert[func() bool](fun)
+		return reflect.ValueOf(f()), nil
+	case funcStringVariadicAny:
+		f, _ := reflect.TypeAssert[func(string, ...any) string](fun)
+		return reflect.ValueOf(f(args[0].String(), anyArgs(args[1:])...)), nil
+	case funcAnyVariadicAnyAnyErr:
+		f, _ := reflect.TypeAssert[func(any, ...any) (any, error)](fun)
+		v, err := f(args[0].Interface(), anyArgs(args[1:])...)
+		return anyValue(v), err
+	}
+
+	ret := fun.Call(args)
+	if len(ret) == 2 && !ret[1].IsNil() {
+		return ret[0], ret[1].Interface().(error)
+	}
+	return ret[0], nil
+}
+
+func anyArgs(args []reflect.Value) []any {
+	s := make([]any, len(args))
+	for i, arg := range args {
+		s[i] = arg.Interface()
+	}
+	return s
+}
+
+// anyValue returns a valid reflect.Value also for nil, matching what
+// reflect.Value.Call returns for an any result.
+func anyValue(v any) reflect.Value {
+	if v == nil {
+		return reflect.Zero(anyType)
+	}
+	return reflect.ValueOf(v)
 }

@@ -3,14 +3,11 @@ title: Taxonomies
 description: Hugo includes support for user-defined taxonomies.
 categories: []
 keywords: []
-aliases: [/taxonomies/overview/,/taxonomies/usage/,/indexes/overview/,/doc/indexes/,/extras/indexes]
 ---
 
 ## What is a taxonomy?
 
 Hugo includes support for user-defined groupings of content called **taxonomies**. Taxonomies are classifications of logical relationships between content.
-
-### Definitions
 
 Taxonomy
 : A categorization that can be used to classify content
@@ -21,7 +18,7 @@ Term
 Value
 : A piece of content assigned to a term
 
-## Example taxonomy: movie website
+## Example taxonomy
 
 Let's assume you are making a website about movies. You may want to include the following taxonomies:
 
@@ -69,11 +66,23 @@ Moonrise Kingdom            <- Value
     ...
 ```
 
+### Assign terms in front matter
+
+Continuing with the example above, assign the terms for each movie in its front matter. Use the plural name of each taxonomy as the field name, and assign the terms as an array, even when a movie has only one term for a given taxonomy:
+
+{{< code-toggle file=content/movies/unbreakable.md fm=true >}}
+title = 'Unbreakable'
+actors = ['Bruce Willis','Samuel L. Jackson']
+directors = ['M. Night Shyamalan']
+{{< /code-toggle >}}
+
+Each term is a string, and a taxonomy is a flat list of terms rather than a nested data structure. To associate additional data with a term, create a page for the term as described in [Metadata](#metadata).
+
 ### Default destinations
 
 When taxonomies are used Hugo will automatically create both a page listing all the taxonomy's terms and individual pages with lists of content associated with each term. For example, a `categories` taxonomy declared in your configuration and used in your content front matter will create the following pages:
 
-- A single page at `example.com/categories/` that lists all the terms within the taxonomy
+- A single page at `example.org/categories/` that lists all the terms within the taxonomy
 - Individual taxonomy list pages (e.g., `/categories/development/`) for each of the terms that shows a listing of all pages marked as part of that taxonomy within any content file's front matter
 
 ## Configuration

@@ -184,6 +184,13 @@ These are also equivalent:
 {{ 5 | add 2 | mul 6 }} → 42
 ```
 
+And so are these:
+
+```go-html-template
+{{ mul 6 (sub 9 2) }} → 42
+{{ 2 | sub 9 | mul 6 }} → 42
+```
+
 > [!NOTE]
 > Remember that the piped value becomes the final argument to the function or method to which you are piping.
 
@@ -290,7 +297,12 @@ Function|Alias
 [`strings.ToUpper`][]|`upper`
 [`strings.Replace`][]|`replace`
 
-As shown above, frequently used functions have an alias. Use aliases in your templates to reduce code length.
+As shown above, frequently used functions have an alias. Use aliases in your templates to reduce code length. For example, these are equivalent:
+
+```go-html-template
+{{ strings.ToLower "Hugo" }} → hugo
+{{ lower "Hugo" }} → hugo
+```
 
 When calling a function, separate the arguments from the function, and from each other, with a space. For example:
 
@@ -494,7 +506,7 @@ With this project configuration:
 
 {{< code-toggle file=hugo >}}
 title = 'ABC Widgets'
-baseURL = 'https://example.org'
+baseURL = 'https://example.org/'
 [params]
   subtitle = 'The Best Widgets on Earth'
   copyright-year = '2023'

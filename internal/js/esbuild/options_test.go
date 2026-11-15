@@ -37,6 +37,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:         api.ESNext,
 		Format:         api.FormatIIFE,
 		Platform:       api.PlatformBrowser,
+		Charset:        api.CharsetASCII,
 		SourcesContent: 1,
 		Stdin: &api.StdinOptions{
 			Loader: api.LoaderJS,
@@ -58,6 +59,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:            api.ES2018,
 		Format:            api.FormatCommonJS,
 		Platform:          api.PlatformBrowser,
+		Charset:           api.CharsetASCII,
 		SourcesContent:    1,
 		MinifyIdentifiers: true,
 		MinifySyntax:      true,
@@ -80,6 +82,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:            api.ES2018,
 		Format:            api.FormatCommonJS,
 		Platform:          api.PlatformBrowser,
+		Charset:           api.CharsetASCII,
 		MinifyIdentifiers: true,
 		MinifySyntax:      true,
 		MinifyWhitespace:  true,
@@ -103,6 +106,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:            api.ES2018,
 		Format:            api.FormatCommonJS,
 		Platform:          api.PlatformBrowser,
+		Charset:           api.CharsetASCII,
 		MinifyIdentifiers: true,
 		MinifySyntax:      true,
 		MinifyWhitespace:  true,
@@ -126,6 +130,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:            api.ES2018,
 		Format:            api.FormatCommonJS,
 		Platform:          api.PlatformBrowser,
+		Charset:           api.CharsetASCII,
 		MinifyIdentifiers: true,
 		MinifySyntax:      true,
 		MinifyWhitespace:  true,
@@ -148,6 +153,7 @@ func TestToBuildOptions(t *testing.T) {
 		Target:         api.ESNext,
 		Format:         api.FormatIIFE,
 		Platform:       api.PlatformBrowser,
+		Charset:        api.CharsetASCII,
 		SourcesContent: 1,
 		Stdin: &api.StdinOptions{
 			Loader: api.LoaderJS,
@@ -189,6 +195,8 @@ func TestToBuildOptionsTarget(t *testing.T) {
 		{"es2021", api.ES2021},
 		{"es2022", api.ES2022},
 		{"es2023", api.ES2023},
+		{"es2024", api.ES2024},
+		{"es2025", api.ES2025},
 		{"", api.ESNext},
 		{"esnext", api.ESNext},
 	} {
@@ -225,6 +233,7 @@ func TestDecodeExternalOptions(t *testing.T) {
 		Target:         api.ESNext,
 		Format:         api.FormatIIFE,
 		Platform:       api.PlatformNode,
+		Charset:        api.CharsetASCII,
 		SourcesContent: api.SourcesContentInclude,
 	})
 }

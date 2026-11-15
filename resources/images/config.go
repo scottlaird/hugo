@@ -36,6 +36,7 @@ const (
 	ActionCrop   = "crop"
 	ActionFit    = "fit"
 	ActionFill   = "fill"
+	ActionFilter = "filter"
 )
 
 var Actions = map[string]bool{
@@ -83,13 +84,14 @@ var (
 
 	// Increment to mark all processed images as stale. Only use when absolutely needed.
 	// See the finer grained smartCropVersionNumber.
-	mainImageVersionNumber = 1
+	MainImageVersionNumber = 1
 
 	// Increment a format's version number to mark all processed images targeting
 	// that format as stale, e.g. after a change to its encoder. This is finer
 	// grained than mainImageVersionNumber, which invalidates every format.
-	formatVersionNumbers = map[Format]int{
+	FormatVersionNumbers = map[Format]int{
 		AVIF: 1,
+		PNG:  1, // See issue 12543, 12536
 	}
 )
 
@@ -259,7 +261,9 @@ func DecodeImageConfig(options []string, defaults *config.ConfigNamespace[Imagin
 	options = options[:n]
 
 	for _, part := range options {
-		if _, ok := Actions[part]; ok {
+		if part == "firstframeonly" {
+			c.FirstFrameOnly = true
+		} else if _, ok := Actions[part]; ok {
 			c.Action = part
 		} else if pos, ok := anchorPositions[part]; ok {
 			c.Anchor = pos
@@ -334,16 +338,15 @@ func DecodeImageConfig(options []string, defaults *config.ConfigNamespace[Imagin
 		return c, err
 	}
 
-	if mainImageVersionNumber > 0 {
-		options = append(options, strconv.Itoa(mainImageVersionNumber))
+	if MainImageVersionNumber > 0 {
+		options = append(options, strconv.Itoa(MainImageVersionNumber))
 	}
 
-	if v := formatVersionNumbers[c.TargetFormat]; v > 0 {
+	if v := FormatVersionNumbers[c.TargetFormat]; v > 0 {
 		options = append(options, "tfv"+strconv.Itoa(v))
 	}
 
-	usesSmartCrop := c.Anchor == SmartCropAnchor && (c.Action == ActionCrop || c.Action == ActionFill)
-	if smartCropVersionNumber > 0 && usesSmartCrop {
+	if smartCropVersionNumber > 0 && c.usesSmartCrop() {
 		options = append(options, strconv.Itoa(smartCropVersionNumber))
 	}
 
@@ -362,6 +365,14 @@ type ImageConfig struct {
 
 	// If set, this will be used as the key in filenames etc.
 	Key string
+
+	// Whether the palette of a paletted source image should be re-applied to
+	// the result when the target format is PNG, so an indexed PNG stays indexed.
+	// This is always the case for the geometric actions (resize, crop, fit, fill);
+	// a filter chain turns it off unless all its filters are geometric,
+	// as other filters routinely introduce colors outside the source palette.
+	// See issue 12543.
+	PreserveSourcePalette bool
 
 	// Quality ranges from 1 to 100 inclusive, higher is better.
 	// This is only relevant for JPEG and WEBP images.
@@ -396,6 +407,9 @@ type ImageConfig struct {
 	// AVIF-specific options.
 	EncoderSpeed int
 
+	// If set, only the first frame of animated images is decoded and processed.
+	FirstFrameOnly bool
+
 	Width  int
 	Height int
 }
@@ -407,6 +421,7 @@ func (c *ImageConfig) init(defaults ImagingConfigInternal, sourceFormat Format) 
 	if c.TargetFormat == 0 {
 		c.TargetFormat = sourceFormat
 	}
+	c.FirstFrameOnly = c.FirstFrameOnly || defaults.Imaging.FirstFrameOnly
 	if c.Filter == nil {
 		c.Filter = defaults.ResampleFilter
 	}
@@ -440,6 +455,10 @@ func (c *ImageConfig) init(defaults ImagingConfigInternal, sourceFormat Format) 
 		}
 	}
 	return nil
+}
+
+func (c ImageConfig) usesSmartCrop() bool {
+	return c.Anchor == SmartCropAnchor && (c.Action == ActionCrop || c.Action == ActionFill)
 }
 
 func (c ImageConfig) Reanchor(a gift.Anchor) ImageConfig {
@@ -511,6 +530,9 @@ type ImagingConfig struct {
 
 	// Default color used in fill operations (e.g. "fff" for white).
 	BgColor string
+
+	// If set, only the first frame of animated images is decoded and processed.
+	FirstFrameOnly bool
 
 	Exif ExifConfig
 	Meta MetaConfig

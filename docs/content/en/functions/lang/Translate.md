@@ -1,6 +1,6 @@
 ---
 title: lang.Translate
-description: Translates a string using the translation tables in the i18n directory.
+description: Returns a translated string using the translation tables in the i18n directory.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [T, i18n]
     returnType: string
     signatures: ['lang.Translate KEY [CONTEXT]']
-aliases: [/functions/i18n]
 ---
 
 The `lang.Translate` function returns the value associated with the given key by searching the current language's [translation tables](#translation-tables), then those for the [`defaultContentLanguage`][].

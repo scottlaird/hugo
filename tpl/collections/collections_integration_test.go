@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gohugoio/hugo/htesting"
 	"github.com/gohugoio/hugo/hugolib"
 	"github.com/gohugoio/hugo/resources/page"
 	"github.com/gohugoio/hugo/tpl/collections"
@@ -57,6 +58,25 @@ not: {{ apply (slice "hello") "not" "." }}
 	b := hugolib.Test(t, files)
 
 	b.AssertFileContent("public/index.html", "len: [5]", "not: [false]")
+}
+
+// See issue 15577.
+func TestInUniqTimeDifferentLocations(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['page','rss','section','sitemap','taxonomy','term']
+-- layouts/home.html --
+{{ $utc := time.AsTime "2023-07-19T17:42:36Z" }}
+{{ $tokyo := $utc | time.In "Asia/Tokyo" }}
+{{ $later := $utc.Add 1 }}
+in: {{ in (slice $utc) $tokyo }}|{{ in (slice $later) $tokyo }}
+uniq: {{ len (uniq (slice $utc $tokyo $later)) }}
+`
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent("public/index.html", "in: true|false", "uniq: 2")
 }
 
 // Issue 9865
@@ -102,6 +122,24 @@ func TestAppendSliceToASliceOfSlices(t *testing.T) {
 	b := hugolib.Test(t, files)
 
 	b.AssertFileContent("public/index.html", "[[a] [b] [c]]")
+}
+
+// See issue 11131.
+func TestAppendEmptySlicePreservesType(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+-- layouts/home.html --
+{{ $names := slice "Hugo" }}
+{{ $names = $names | append slice }}
+Type: {{ printf "%T" $names }}
+{{ $names = $names | append (slice "Go" "HTML") }}
+Names: {{ $names | jsonify }}
+`
+
+	b := hugolib.Test(t, files)
+	b.AssertFileContent("public/index.html", "Type: []string", `Names: ["Hugo","Go","HTML"]`)
 }
 
 func TestAppendNilToSlice(t *testing.T) {
@@ -253,7 +291,8 @@ tags: ['tag-b']
 `
 	b := hugolib.Test(t, files)
 
-	b.AssertFileContent("public/categories/cat-a/index.html",
+	b.AssertFileContent(
+		"public/categories/cat-a/index.html",
 		"0: List1: 3|\n0: List2: 3|\n0: Intersect: 3|\n0: Union: 3|\n0: SymDiff: 0|\n0: Uniq: 3|\n\n\n1: List1: 3|",
 		"1: List2: 2|\n1: Intersect: 2|\n1: Union: 3|\n1: SymDiff: 1|\n1: Uniq: 3|\n\n\n2: List1: 3|\n2: List2: 1|",
 		"2: Intersect: 1|\n2: Union: 3|\n2: SymDiff: 2|\n2: Uniq: 3|",
@@ -327,7 +366,8 @@ WhereNe: {{ range where site.Pages "Parent" "ne" $page }}{{ .Title }}|{{ end }}$
 
 	b := hugolib.Test(t, files)
 
-	b.AssertFileContent("public/s1/index.html",
+	b.AssertFileContent(
+		"public/s1/index.html",
 		"WhereEq: P1|P2|$",
 		"WhereDefault: P1|P2|$",
 		"RangeIf: P1|P2|$",
@@ -476,11 +516,12 @@ tags_weight: 30
 -- layouts/home.html --
 {{ $unionPages := first 2 .Site.RegularPages | union .Site.RegularPages  }}
 {{ $unionWeightedPages := .Site.Taxonomies.tags.blue | union .Site.Taxonomies.tags.green }}
-{{ printf "unionPages: %T %d" $unionPages (len $unionPages) }} 
+{{ printf "unionPages: %T %d" $unionPages (len $unionPages) }}
 {{ printf "unionWeightedPages: %T %d" $unionWeightedPages (len $unionWeightedPages) }}
  `
 
-	hugolib.Test(t, files).AssertFileContent("public/index.html",
+	hugolib.Test(t, files).AssertFileContent(
+		"public/index.html",
 		"unionPages: page.Pages 3",
 		"unionWeightedPages: page.WeightedPages 6",
 	)
@@ -531,7 +572,8 @@ Symdiff: {{ range $symdiff }}{{ .RelPermalink }}|{{ end }}
 
 	b := hugolib.Test(t, files)
 
-	b.AssertFileContent("public/index.html",
+	b.AssertFileContent(
+		"public/index.html",
 		"uniqPages: page.Pages 3",
 		"inTrue: true",
 		"inFalse: false",
@@ -586,7 +628,8 @@ tags_weight: 20
 {{ printf "intersect:%T:%v" $i $i }}
  `
 
-	hugolib.Test(t, files).AssertFileContent("public/index.html",
+	hugolib.Test(t, files).AssertFileContent(
+		"public/index.html",
 		"pages:2:page.Pages:/page2|/page1",
 		"appendPages:9:page.Pages:home/page",
 		"appendStrings:[]string:[a b c d e]",
@@ -652,4 +695,90 @@ All.
 			}
 		}
 	})
+}
+
+// Front matter integers decode to int64 (TOML), uint64 (YAML) or float64 (JSON),
+// and must all match the []int produced by slice.
+func TestWhereInNumericParams(t *testing.T) {
+	t.Parallel()
+
+	if htesting.Is32Bit() {
+		t.Skip("big int literals overflow int on 32-bit")
+	}
+
+	files := `
+-- hugo.toml --
+disableKinds = ["section", "rss", "sitemap", "taxonomy", "term"]
+-- content/a.md --
++++
+title = "a"
+n = 1
++++
+-- content/b.md --
+---
+title: b
+n: 2
+---
+-- content/c.md --
+{ "title": "c", "n": 3 }
+-- layouts/page.html --
+-- layouts/home.html --
+in: {{ range where site.RegularPages "Params.n" "in" (slice 1 2) }}{{ .Title }}{{ end }}|
+in float: {{ range where site.RegularPages "Params.n" "in" (slice 2.0 3.0) }}{{ .Title }}{{ end }}|
+in mixed: {{ range where site.RegularPages "Params.n" "in" (slice 1 2.5 3.0) }}{{ .Title }}{{ end }}|
+not in: {{ range where site.RegularPages "Params.n" "not in" (slice 1 2) }}{{ .Title }}{{ end }}|
+not in strings: {{ range where site.RegularPages "Params.n" "not in" (slice "1" "2") }}{{ .Title }}{{ end }}|
+intersect: {{ intersect (slice 9007199254740993) (slice 9007199254740993 9007199254740992.0) }}|
+uniq: {{ uniq (slice 9007199254740993 9007199254740992 9007199254740992.0) }}|
+`
+
+	hugolib.Test(t, files).AssertFileContent(
+		"public/index.html",
+		"in: ab|",
+		"in float: bc|",
+		"in mixed: ac|",
+		"not in: c|",
+		"not in strings: abc|",
+		"intersect: [9007199254740993]|",
+		"uniq: [9007199254740993 9007199254740992]|",
+	)
+}
+
+// Issue 15523.
+func TestSortMissingKey(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+-- layouts/home.html --
+{{ $values := slice (dict "t" "b") (dict "x" 1) (dict "t" "a") }}
+Asc: {{ sort $values "t" }}|
+Desc: {{ sort $values "t" "desc" }}|
+Pages: {{ range sort site.RegularPages "Params.color" }}{{ .Title }}|{{ end }}
+-- content/p1.md --
+---
+title: p1
+params:
+  color: blue
+---
+-- content/p2.md --
+---
+title: p2
+---
+-- content/p3.md --
+---
+title: p3
+params:
+  color: azure
+---
+`
+
+	b := hugolib.Test(t, files)
+
+	b.AssertFileContent(
+		"public/index.html",
+		"Asc: [map[x:1] map[t:a] map[t:b]]|",
+		"Desc: [map[t:b] map[t:a] map[x:1]]|",
+		"Pages: p2|p3|p1|",
+	)
 }

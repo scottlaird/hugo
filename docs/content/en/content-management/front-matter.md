@@ -3,7 +3,6 @@ title: Front matter
 description: Use front matter to add metadata to your content.
 categories: []
 keywords: []
-aliases: [/content/front-matter/]
 ---
 
 ## Overview
@@ -63,7 +62,7 @@ The most common front matter fields are `date`, `draft`, `title`, and `weight`, 
 : (`bool`) Applicable to [leaf bundles][], whether to set the `render` and `list` [build options][] to `never`, creating a headless bundle of [page resources][].
 
 `isCJKLanguage`
-: (`bool`) Whether the content language is in the [CJK](g) family. This value determines how Hugo calculates word count, and affects the values returned by the [`WordCount`][], [`FuzzyWordCount`][], [`ReadingTime`][], and [`Summary`][] methods on a `Page` object.
+: (`bool`) Whether the content is in a [CJK](g) language. This value determines how Hugo calculates word count, and affects the values returned by the [`FuzzyWordCount`][], [`ReadingTime`][], [`Summary`][], and [`WordCount`][] methods on a `Page` object. When set, this value takes precedence over the automatic detection enabled by the [`hasCJKLanguage`][] setting in your project configuration.
 
 `keywords`
 : (`[]string`) An array of keywords, typically rendered within a `meta` element within the `head` element of the published HTML file, or used as a [taxonomy](g) to classify content. Access these values from a template using the [`Keywords`][] method on a `Page` object.
@@ -80,11 +79,14 @@ The most common front matter fields are `date`, `draft`, `title`, and `weight`, 
 `markup`
 : (`string`) An identifier corresponding to one of the supported [content formats][]. If not provided, Hugo determines the content renderer based on the file extension.
 
+`menu`
+: Alias to [`menus`](#menus).
+
 `menus`
 : (`string`, `[]string`, or `map`) If set, Hugo adds the page to the given menu or menus. See the [menus][] page for details.
 
 `modified`
-: Alias to [lastmod](#lastmod).
+: Alias to [`lastmod`](#lastmod).
 
 `outputs`
 : (`[]string`) The [output formats][] to render. See [configure outputs][] for more information.
@@ -93,13 +95,13 @@ The most common front matter fields are `date`, `draft`, `title`, and `weight`, 
 : (`map`) A map of custom [page parameters](#parameters).
 
 `pubdate`
-: Alias to [publishDate](#publishdate).
+: Alias to [`publishDate`](#publishdate).
 
 `publishDate`
 : (`string`) The page publication date. Before the publication date, the page will not be rendered unless you pass the `--buildFuture` flag to the `hugo` command. Note that the TOML format also supports unquoted date/time values. See the [dates](#dates) section for examples. Access this value from a template using the [`PublishDate`][] method on a `Page` object.
 
 `published`
-: Alias to [publishDate](#publishdate).
+: Alias to [`publishDate`](#publishdate).
 
 `resources`
 : (`map array`) An array of maps to provide metadata for [page resources][]. Each element supports the `src`, `name`, `title`, and `params` keys.
@@ -126,7 +128,7 @@ The most common front matter fields are `date`, `draft`, `title`, and `weight`, 
   <!-- markdownlint-enable MD049 -->
 
 `slug`
-: (`string`) Overrides the last segment of the URL path. Not applicable to `home`, `section`, `taxonomy`, or `term` pages. See the [URL management][] page for details. Access this value from a template using the [`Slug`][] method on a `Page` object.
+: (`string`) Overrides the last segment of the URL path. Not applicable to the `home` page. See [details][url_management_slug]. Access this value from a template using the [`Slug`][] method on a `Page` object.
 
 `summary`
 : (`string`) Conceptually different than the page `description`, the summary either summarizes the content or serves as a teaser to encourage readers to visit the page. Access this value from a template using the [`Summary`][] method on a `Page` object.
@@ -141,10 +143,10 @@ The most common front matter fields are `date`, `draft`, `title`, and `weight`, 
 : (`string`) The [content type](g), overriding the value derived from the top-level section in which the page resides. Access this value from a template using the [`Type`][] method on a `Page` object.
 
 `unpublishdate`
-: Alias to [expirydate](#expirydate).
+: Alias to [`expirydate`](#expirydate).
 
 `url`
-: (`string`) Overrides the entire URL path. Applicable to regular pages and section pages. See the [URL management][] page for details.
+: (`string`) Overrides the entire URL path. Not applicable to the `home` page. See [details][url_management_url].
 
 `weight`
 : (`int`) The page [weight](g), used to order the page within a [page collection](g). Access this value from a template using the [`Weight`][] method on a `Page` object.
@@ -213,7 +215,7 @@ Access taxonomy terms from a template using the [`Params`][] or [`GetTerms`][] m
 > [!NOTE]
   > For multilingual projects, defining cascade values in your project configuration is often more efficient. This avoids repeating the same cascade values for each language. See [details][].
 
-A [branch](g) can cascade front matter values to its descendants. However, this cascading will be prevented if the descendant already defines the field, or if a closer ancestor branch has already cascaded a value for that same field.
+{{% glossary-term "cascade" %}}
 
 For example, to cascade the `color` page parameter from the home page to all its descendants:
 
@@ -300,17 +302,16 @@ To override the default time zone, set the [`timeZone`][] in your project config
 [Emacs Org Mode]: https://orgmode.org/
 [JSON]: https://www.json.org/
 [TOML]: https://toml.io/
-[URL management]: /content-management/urls/#slug
 [YAML]: https://yaml.org/
 [`Aliases`]: /methods/page/aliases/
 [`Date`]: /methods/page/date/
 [`Description`]: /methods/page/description/
 [`Draft`]: /methods/page/draft/
 [`ExpiryDate`]: /methods/page/expirydate/
-[`FuzzyWordCount`]: /methods/page/wordcount/
+[`FuzzyWordCount`]: /methods/page/fuzzywordcount/
 [`GetTerms`]: /methods/page/getterms/
 [`Keywords`]: /methods/page/keywords/
-[`Lastmod`]: /methods/page/date/
+[`Lastmod`]: /methods/page/lastmod/
 [`Layout`]: /methods/page/layout/
 [`LinkTitle`]: /methods/page/linktitle/
 [`Param`]: /methods/page/param/
@@ -325,6 +326,7 @@ To override the default time zone, set the [`timeZone`][] in your project config
 [`Type`]: /methods/page/type/
 [`Weight`]: /methods/page/weight/
 [`WordCount`]: /methods/page/wordcount/
+[`hasCJKLanguage`]: /configuration/all/#hascjklanguage
 [`timeZone`]: /configuration/all/#timezone
 [aliases]: /content-management/urls/#aliases
 [build options]: /content-management/build-options/
@@ -339,3 +341,5 @@ To override the default time zone, set the [`timeZone`][] in your project config
 [sitemap templates]: /templates/sitemap/
 [target a specific template]: /templates/lookup-order/#target-a-template
 [template lookup order]: /templates/lookup-order/
+[url_management_slug]: /content-management/urls/#slug
+[url_management_url]: /content-management/urls/#url

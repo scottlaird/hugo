@@ -7,11 +7,10 @@ params:
   functions_and_methods:
     aliases: [findRESubmatch]
     returnType: '[][]string'
-    signatures: ['strings.FindRESubmatch PATTERN INPUT [LIMIT]']
-aliases: [/functions/findresubmatch]
+    signatures: ['strings.FindRESubmatch PATTERN STRING [LIMIT]']
 ---
 
-By default, `findRESubmatch` finds all matches. You can limit the number of matches with an optional LIMIT argument. A return value of nil indicates no match.
+By default, `findRESubmatch` finds all matches. You can limit the number of matches with an optional LIMIT argument. A return value of `nil` indicates no match.
 
 {{% include "/_common/functions/regular-expressions.md" %}}
 

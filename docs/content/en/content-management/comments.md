@@ -3,7 +3,6 @@ title: Comments
 description: Hugo ships with an embedded Disqus partial, but this isn't the only commenting system that will work with your new Hugo website.
 categories: []
 keywords: []
-aliases: [/extras/comments/]
 ---
 
 Hugo ships with support for [Disqus][], a third-party service that provides comment and community capabilities to websites via JavaScript.
@@ -29,7 +28,7 @@ For many websites, this is enough configuration. However, you also have the opti
 - `params.disqus_title`
 - `params.disqus_url`
 
-### Render Hugo's embedded Disqus partial
+### Render the partial
 
 To render it, add the following code where you want comments to appear:
 

@@ -217,13 +217,6 @@ func GetDependencyListNonGo() []string {
 		deps = append(deps, formatDep(dep[0], dep[1]))
 	}
 
-	if IsExtended {
-		deps = append(
-			deps,
-			formatDep("github.com/sass/libsass", "3.6.6"),
-		)
-	}
-
 	if dartSass := dartSassVersion(); dartSass.ProtocolVersion != "" {
 		dartSassPath := "github.com/sass/dart-sass-embedded"
 		if IsDartSassGeV2() {
@@ -337,6 +330,12 @@ func DeprecateLevelMin(item, alternative string, version string, minLevel logg.L
 	deprecateLevel(item, alternative, version, level)
 }
 
+// DeprecateLevelMax informs about a deprecation starting at the given version, but with a maximum log level.
+func DeprecateLevelMax(item, alternative string, version string, maxLevel logg.Level) {
+	level := min(deprecationLogLevelFromVersion(version), maxLevel)
+	deprecateLevel(item, alternative, version, level)
+}
+
 // deprecateLevel informs about a deprecation logging at the given level.
 func deprecateLevel(item, alternative, version string, level logg.Level) {
 	deprecateLevelWithLogger(item, alternative, version, level, loggers.Log().Logger())
@@ -344,9 +343,6 @@ func deprecateLevel(item, alternative, version string, level logg.Level) {
 
 // DeprecateLevel informs about a deprecation logging at the given level.
 func deprecateLevelWithLogger(item, alternative, version string, level logg.Level, log logg.Logger) {
-	//if strings.Contains(item, "module.mounts.lang") || strings.Contains(item, "includeFiles") {
-	// hdebug.Panicf("Deprecated")
-	//}
 	var msg string
 	if level == logg.LevelError {
 		// Useful to debug deprecation errors that needs to be removedor fixed. Comment out when done debugging.
@@ -392,9 +388,6 @@ func BuildVersionString() string {
 	}
 	if bi.Revision != "" {
 		version += "-" + bi.Revision
-	}
-	if IsExtended {
-		version += "+extended"
 	}
 	if IsWithdeploy {
 		version += "+withdeploy"

@@ -1,6 +1,6 @@
 ---
 title: safe.JSStr
-description: Declares the given string as a safe JavaScript string.
+description: Returns the given string declared as a safe JavaScript string.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [safeJSStr]
     returnType: template.JSStr
     signatures: [safe.JSStr INPUT]
-aliases: [/functions/safejsstr]
 ---
 
 ## Introduction

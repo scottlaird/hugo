@@ -24,7 +24,7 @@
 		<meta property="og:image" content="{{ . | absURL }}">
 	{{ end -}}
 {{- else -}}
-	{{- $featured := partial "opengraph/get-featured-image.html" . }}
+	{{- $featured := partial "./get-featured-image.html" . }}
 	{{- with $featured -}}
 		<meta property="og:image" content="{{ $featured.Permalink }}">
 	{{- else -}}
@@ -40,12 +40,12 @@
 	{{ with .PublishDate }}
 		<meta
 			property="article:published_time"
-		{{ .Format $iso8601 | printf "content=%q" | safeHTMLAttr }}>
+			{{ .Format $iso8601 | printf "content=%q" | safeHTMLAttr }}>
 	{{ end }}
 	{{ with .Lastmod }}
 		<meta
 			property="article:modified_time"
-		{{ .Format $iso8601 | printf "content=%q" | safeHTMLAttr }}>
+			{{ .Format $iso8601 | printf "content=%q" | safeHTMLAttr }}>
 	{{ end }}
 {{- end -}}
 

@@ -1,6 +1,6 @@
 ---
 title: css.Sass
-description: Transpiles Sass to CSS.
+description: Returns a resource created by transpiling the given Sass resource to CSS.
 categories: []
 keywords: []
 params:
@@ -8,7 +8,6 @@ params:
     aliases: [toCSS]
     returnType: resource.Resource
     signatures: ['css.Sass [OPTIONS] RESOURCE']
-aliases: [/functions/resources/tocss/]
 ---
 
 Transpile Sass to CSS using the LibSass transpiler included in Hugo's extended and extended/deploy editions, or [install Dart Sass](#dart-sass) to use the latest features of the Sass language.
@@ -37,6 +36,10 @@ The `css.Sass` function accepts an options map.
   }}
   {{ $r := resources.Get "sass/main.scss" | css.Sass $opts }}
   ```
+
+`importContext`
+: {{< new-in 0.165.0 />}}
+: (`resource.ResourceGetter`) A [resource getter](g) to use when resolving `@use` and `@import` statements. Hugo searches this context first, matching by the path as written in the statement, before falling back to the file system. Applicable to Dart Sass.
 
 `includePaths`
 : (`slice`) A slice of paths, relative to the project root, that the transpiler will use when resolving `@use` and `@import` statements.
@@ -107,7 +110,7 @@ The `css.Sass` function accepts an options map.
   ```
 
 `targetPath`
-: (`string`) The publish path for the transformed resource, relative to the [`publishDir`][]. If unset, the target path defaults to the asset's original path with a `.css` extension.
+: (`string`) The target path of the resource, relative to the `public` directory. If unset, the target path defaults to the asset's original path with a `.css` extension.
 
   ```go-html-template
   {{ $opts := dict
@@ -267,6 +270,10 @@ The `css.Sass` function accepts an options map.
 {{ end }}
 ```
 
+## File system access
+
+{{% include "/_common/functions/node-permissions/imports.md" %}}
+
 ## Dart Sass
 
 <!-- TODO
@@ -286,7 +293,7 @@ If you have been using Embedded Dart Sass[^1] with Hugo v0.113.0 and earlier, un
 
 If you install Hugo as a [Snap package][] there is no need to install Dart Sass. The Hugo Snap package includes Dart Sass.
 
-### Installing in a development environment
+### Development environment
 
 When you install Dart Sass somewhere in your PATH, Hugo will find it.
 
@@ -305,7 +312,7 @@ Run `hugo env` to list the active transpilers.
 > [!NOTE]
 > If you build Hugo from source and run `mage test -v`, the test will fail if you install Dart Sass as a Snap package. This is due to the Snap package's strict confinement model.
 
-### Installing in a production environment
+### Production environment
 
 To use Dart Sass with Hugo on a [CI/CD](g) platform, you typically must modify your build workflow to install Dart Sass before the Hugo site build begins. This is because these platforms don't have Dart Sass pre-installed, and Hugo needs it to process your Sass files.
 
@@ -316,35 +323,20 @@ There's one key exception where you can skip this step: you have committed your 
 
 By committing the `resources` directory, you're providing the pre-built CSS files directly to your CI/CD platform, so it doesn't need to run the Sass compilation itself.
 
-For examples of how to install Dart Sass in a production environment, see these hosting guides:
-
-- [Cloudflare][]
-- [GitHub Pages][]
-- [GitLab Pages][]
-- [Netlify][]
-- [Render][]
-- [SourceHut][]
-- [Vercel][]
+For examples of how to install Dart Sass in a production environment, see the [hosting guides][] for CI/CD platforms.
 
 [^1]: In 2023, the Sass team deprecated Embedded Dart Sass in favor of Dart Sass.
 
-[Cloudflare]: /host-and-deploy/host-on-cloudflare/
 [Dart Sass]: https://sass-lang.com/dart-sass/
-[GitHub Pages]: /host-and-deploy/host-on-github-pages/
-[GitLab Pages]: /host-and-deploy/host-on-gitlab-pages/
 [LibSass]: https://sass-lang.com/libsass
-[Netlify]: /host-and-deploy/host-on-netlify/
-[Render]: /host-and-deploy/host-on-render/
 [SCSS]: https://sass-lang.com/documentation/syntax#scss
 [Snap package]: https://snapcraft.io/hugo
-[SourceHut]: /host-and-deploy/host-on-sourcehut-pages/
-[Vercel]: /host-and-deploy/host-on-vercel/
 [`css.Quoted`]: /functions/css/quoted/
 [`css.Unquoted`]: /functions/css/unquoted/
-[`publishDir`]: /configuration/all/#publishdir
 [`useResourceCacheWhen`]: /configuration/build/#useresourcecachewhen
 [brew.sh]: https://brew.sh/
 [chocolatey.org]: https://community.chocolatey.org/packages/sass
+[hosting guides]: /host-and-deploy/deployment-methods/#push-to-a-git-repository
 [indented]: https://sass-lang.com/documentation/syntax#the-indented-syntax
 [prebuilt binaries]: https://github.com/sass/dart-sass/releases/latest
 [scoop.sh]: https://scoop.sh/#/apps?q=sass

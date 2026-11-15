@@ -14,12 +14,12 @@
 package resources_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/gohugoio/hugo/hugolib"
 	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/dartsass"
-	"github.com/gohugoio/hugo/resources/resource_transformers/tocss/scss"
 )
 
 func TestCopy(t *testing.T) {
@@ -60,7 +60,7 @@ Copy3: {{ $copy3.RelPermalink}}|{{ $copy3.MediaType }}|{{ $copy3.Content | safeJ
 
 	b.AssertFileContent("public/index.html", `
 Image Orig:  /blog/images/pixel.png|image/png|1|1|
-Image Copy1:  /blog/images/copy_hu_ef85c36d9b9eff0.png|image/png|3|4|
+Image Copy1:  /blog/images/copy_hu_e592d810de530dee.png|image/png|3|4|
 Image Copy2:  /blog/images/copy2.png|image/png|3|4|
 Image Copy3:  image/png|3|4|
 Orig: /blog/js/foo.js|text/javascript|let foo;|
@@ -240,7 +240,7 @@ match /files/C*: 2|
 func TestDartSassVars(t *testing.T) {
 	t.Parallel()
 
-	if !scss.Supports() || !dartsass.Supports() {
+	if !dartsass.Supports() {
 		t.Skip()
 	}
 
@@ -253,27 +253,18 @@ disableKinds = ['page','section','rss','sitemap','taxonomy','term']
   {{ .Content }}
 {{ end }}
 
-{{ $opts := dict "transpiler" "libsass" "outputStyle" "compressed" "vars" (dict "color" "blue") }}
-{{ with resources.Get "libsass.scss" | css.Sass $opts }}
-  {{ .Content }}
-{{ end }}
 -- assets/dartsass.scss --
 @use "hugo:vars" as v;
 .dartsass {
   color: v.$color;
 }
--- assets/libsass.scss --
-@import "hugo:vars";
-.libsass {
-  color: $color;
-}
 `
 
 	b := hugolib.Test(t, files, hugolib.TestOptWarn())
 
-	b.AssertFileContent("public/index.html",
+	b.AssertFileContent(
+		"public/index.html",
 		".dartsass{color:red}",
-		".libsass{color:blue}",
 	)
 	b.AssertLogContains("! WARN  Dart Sass: hugo:vars")
 }
@@ -296,6 +287,31 @@ Name: {{ $r.Name }}|
 
 	b.AssertFileContent("public/index.html", "Name: /js/main.js|")
 	b.AssertFileExists("public/js/main.min.js", true)
+}
+
+// See issue 15546.
+func TestConcatSliceOfAny(t *testing.T) {
+	t.Parallel()
+
+	files := `
+-- hugo.toml --
+disableKinds = ['page','rss','section','taxonomy','term','sitemap']
+-- assets/a.js --
+let a;
+-- assets/b.js --
+let b;
+-- layouts/home.html --
+{{ $sr := collections.Apply (slice "a.js" "b.js") "resources.Get" "." }}
+{{ $r := resources.Concat "bundle.js" $sr }}
+{{ $r.RelPermalink }}|{{ $r.Content }}|
+`
+
+	b := hugolib.Test(t, files)
+	b.AssertFileContent("public/index.html", "/bundle.js|let a;\nlet b;|")
+
+	files = strings.Replace(files, `$r := resources.Concat "bundle.js" $sr`, `$r := resources.Concat "bundle.js" ($sr | append 42)`, 1)
+	b, err := hugolib.TestE(t, files)
+	b.Assert(err, qt.ErrorMatches, `(?s).*expected slice of Resource objects, received int in slice at index 2.*`)
 }
 
 // See issue 15086.
