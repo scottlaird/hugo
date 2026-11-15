@@ -218,7 +218,11 @@ func sassNamePatterns(name string) []string {
 		return []string{"_%s", "%s"}
 	}
 	if strings.HasPrefix(name, "_") {
-		return []string{"_%s.scss", "_%s.sass", "_%s.css"}
+		return []string{
+			"_%s.scss", "_%s.sass", "_%s.css",
+			"_%s/_index.scss", "_%s/_index.sass",
+			"_%s/index.scss", "_%s/index.sass",
+		}
 	}
 	return []string{
 		"_%s.scss", "%s.scss",
